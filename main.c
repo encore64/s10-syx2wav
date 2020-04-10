@@ -34,27 +34,173 @@ int main(int argc, char *argv[]) {
 	long fsize = ftell(syxfile);
 	rewind(syxfile);
 
-	byte *syxbuf = malloc(fsize+1);			// read syxfile into syxbuf
+	byte *syxbuf = malloc(fsize);			// read syxfile into syxbuf
+	byte *wavbuf = malloc(fsize);			// make wavbuffer of atleast equal size
 	fread(syxbuf, 1, fsize, syxfile);
 	fclose(syxfile);
-	syxbuf[fsize] = 0;
+
+	int SampleCounter = 0;
+	int Sample16bit;
 
 	byte char_temp;
-	int sysex_segments = 0;
+	int SysexCounter = 0;
+	int SysexActive = 0;
+	byte CommandId;
+	byte ParameterId;
 	size_t x;
 
-	/*
 	for (x = 0; x < fsize; x++) {
 		char_temp = syxbuf[x];
 		//printf("%02hhX ", char_temp);
 
-		if (char_temp == 0xf0) {
-			sysex_segments++;
+		if (char_temp == 0xf0) { // system exclusive start
+			printf("\nSystem Exclusive start.\n");
+			SysexCounter = 0;
+			SysexActive = 1;
+			continue;
+		}
+		if (SysexActive) {
+			if (SysexCounter == 0) {
+				if (char_temp != 0x41) { // Roland ID ?
+					printf("Wrong manufacturer ID.\n");
+					SysexActive = 0;
+				} else {
+					printf("Roland ID found.\n");
+				}
+				SysexCounter++;
+				continue;
+			}
+
+			if (SysexCounter == 1) {
+				if (char_temp > 0x0f) { // Device ID
+					printf("Wrong MIDI basic channel.\n");
+					SysexActive = 0;
+				} else {
+					printf("MIDI basic channel: %d\n", char_temp+1);
+				}
+				SysexCounter++;
+				continue;
+			}
+
+			if (SysexCounter == 2) {
+				if (char_temp != 0x10) { // S-10 ?
+					printf("Wrong Model-ID.\n");
+					SysexActive = 0;
+				} else {
+					printf("S-10 found.\n");
+				}
+				SysexCounter++;
+				continue;
+			}
+
+			if (SysexCounter == 3) {
+				CommandId = char_temp;
+
+				if (CommandId == 0x11) { // RQ1?
+					printf("Command-ID: Request (one way).\n");
+				}
+				if (CommandId == 0x12) { // DT1?
+					printf("Command-ID: Data set (One way).\n");
+				}
+				if (CommandId == 0x40) { // WSD?
+					printf("Command-ID: Want to send data.\n");
+				}
+				if (CommandId == 0x41) { // RQD?
+					printf("Command-ID: Request data.\n");
+				}
+				if (CommandId == 0x42) { // DAT?
+					printf("Command-ID: Data set.\n");
+				}
+				if (CommandId == 0x43) { // ACK?
+					printf("Command-ID: Acknowledge.\n");
+				}
+				if (CommandId == 0x45) { // EOD?
+					printf("Command-ID: End of data.\n");
+				}
+				if (CommandId == 0x4e) { // ERR?
+					printf("Command-ID: Communication error.\n");
+				}
+				if (CommandId == 0x4f) { // RJC?
+					printf("Command-ID: Rejection.\n");
+				}
+
+				SysexCounter++;
+				continue;
+			}
+
+			if (SysexCounter == 4) { // Address
+				if (CommandId == 0x12) { // DT1?
+					printf("Address: %02hhX %02hhX %02hhX ", syxbuf[x], syxbuf[x+1] ,syxbuf[x+2]);
+					ParameterId = 0;
+
+					if ((syxbuf[x] == 0x01) && (((syxbuf[x+1] == 0x00) && (syxbuf[x+2] >= 0x00)) || ((syxbuf[x+1] == 0x00) && (syxbuf[x+2] >= 0x48)))) {
+						ParameterId = 1;
+						printf("Wave parameter of block-1.");
+					}
+					if ((syxbuf[x] == 0x01) && (((syxbuf[x+1] == 0x00) && (syxbuf[x+2] >= 0x49)) || ((syxbuf[x+1] == 0x01) && (syxbuf[x+2] >= 0x11)))) {
+						ParameterId = 1;
+						printf("Wave parameter of block-2.");
+					}
+					if ((syxbuf[x] == 0x01) && (((syxbuf[x+1] == 0x01) && (syxbuf[x+2] >= 0x12)) || ((syxbuf[x+1] == 0x01) && (syxbuf[x+2] >= 0x5a)))) {
+						ParameterId = 1;
+						printf("Wave parameter of block-3.");
+					}
+					if ((syxbuf[x] == 0x01) && (((syxbuf[x+1] == 0x01) && (syxbuf[x+2] >= 0x5b)) || ((syxbuf[x+1] == 0x02) && (syxbuf[x+2] >= 0x24)))) {
+						ParameterId = 1;
+						printf("Wave parameter of block-4.");
+					}
+
+					if ((syxbuf[x] == 0x01) && (syxbuf[x+1] == 0x08)) {
+						ParameterId = 2;
+						printf("Performance parameter.");
+					}
+
+					if ((syxbuf[x] >= 0x02) && (syxbuf[x] <= 0x05)) {
+						ParameterId = 3;
+						printf("Wave data of bank-1.");
+					}
+					if ((syxbuf[x] >= 0x06) && (syxbuf[x] <= 0x09)) {
+						ParameterId = 3;
+						printf("Wave data of bank-2.");
+					}
+					if ((syxbuf[x] >= 0x0a) && (syxbuf[x] <= 0x0d)) {
+						ParameterId = 3;
+						printf("Wave data of bank-3.");
+					}
+					if ((syxbuf[x] >= 0x0e) && (syxbuf[x] <= 0x12)) {
+						ParameterId = 3;
+						printf("Wave data of bank-4.");
+					}
+					printf("\n");
+				}
+			}
+
+			// SysexCounter = 7 is checksum
+
+			if ((SysexCounter >= 8) && (ParameterId == 3) && (char_temp != 0xf7)) { // Wave data and no sysex stop
+				if (SampleCounter%2 == 0) { // even
+				} else {
+					Sample16bit = ((syxbuf[x-1] & 0x7f) << 9) + ((syxbuf[x] & 0x7c) << 1);
+					//printf("%d\n",(syxbuf[x-1] & 0x7f));
+					printf("%d\n",Sample16bit);
+					//Sample16bit = SampleCounter & 0xffff;
+					wavbuf[SampleCounter] = 0xff & Sample16bit;
+					wavbuf[SampleCounter-1] = 0xff & (Sample16bit >> 8);
+				}
+				SampleCounter++;
+			}
+
+			SysexCounter++;
+		}
+
+		if (char_temp == 0xf7) { // system exclusive stop
+			printf("System Exclusive stop. SysexCounter at: %d\n", SysexCounter);
+			SysexActive = 0;
+			continue;
 		}
 	}
 
-	printf("\nNumber of sysex segments: %d\n", sysex_segments);
-	*/
+	printf("SampleCounter: %d\n", SampleCounter);
 
 	long SampleRate = 30000;
 	byte NumChannels = 1;
@@ -122,11 +268,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	fwrite(wave_header, 1, sizeof(wave_header), wavfile);
-
-	for (x = 0; x < fsize; x++) {
-		char_temp = (syxbuf[x]);
-		fwrite(&char_temp, 1, sizeof(char_temp), wavfile);
-	}
+	fwrite(wavbuf, 1, SampleCounter, wavfile);
 
 	fclose(wavfile);
 
