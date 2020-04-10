@@ -40,6 +40,7 @@ int main(int argc, char *argv[]) {
 	fclose(syxfile);
 
 	int SampleCounter = 0;
+	int LoHiToggle;
 	int Sample16bit;
 
 	byte char_temp;
@@ -132,6 +133,7 @@ int main(int argc, char *argv[]) {
 				if (CommandId == 0x12) { // DT1?
 					printf("Address: %02hhX %02hhX %02hhX ", syxbuf[x], syxbuf[x+1] ,syxbuf[x+2]);
 					ParameterId = 0;
+					LoHiToggle = 0;
 
 					if ((syxbuf[x] == 0x01) && (((syxbuf[x+1] == 0x00) && (syxbuf[x+2] >= 0x00)) || ((syxbuf[x+1] == 0x00) && (syxbuf[x+2] >= 0x48)))) {
 						ParameterId = 1;
@@ -175,19 +177,16 @@ int main(int argc, char *argv[]) {
 				}
 			}
 
-			// SysexCounter = 7 is checksum
+			if ((SysexCounter >= 7) && (ParameterId == 3) && (char_temp != 0xf7)) { // Wave data and no sysex stop
+				if (LoHiToggle %2 != 0) { // odd
 
-			if ((SysexCounter >= 8) && (ParameterId == 3) && (char_temp != 0xf7)) { // Wave data and no sysex stop
-				if (SampleCounter%2 == 0) { // even
-				} else {
-					Sample16bit = ((syxbuf[x-1] & 0x7f) << 9) + ((syxbuf[x] & 0x7c) << 1);
-					//printf("%d\n",(syxbuf[x-1] & 0x7f));
-					printf("%d\n",Sample16bit);
-					//Sample16bit = SampleCounter & 0xffff;
+					Sample16bit = ((syxbuf[x-1] & 0x7f) << 9) + ((syxbuf[x] & 0x7c) << 2);
 					wavbuf[SampleCounter] = 0xff & Sample16bit;
-					wavbuf[SampleCounter-1] = 0xff & (Sample16bit >> 8);
+					wavbuf[SampleCounter+1] = 0xff & (Sample16bit >> 8);
+
+					SampleCounter+=2;
 				}
-				SampleCounter++;
+				LoHiToggle++;
 			}
 
 			SysexCounter++;
