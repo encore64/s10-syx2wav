@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
 	fread(syxbuf, 1, fsize, syxfile);
 	fclose(syxfile);
 
-	int SampleCounter = 0;
+	int SamplePosition = 0;
 	int LoHiToggle;
 	int Sample16bit;
 
@@ -181,10 +181,10 @@ int main(int argc, char *argv[]) {
 				if (LoHiToggle %2 != 0) { // odd
 
 					Sample16bit = ((syxbuf[x-1] & 0x7f) << 9) + ((syxbuf[x] & 0x7c) << 2);
-					wavbuf[SampleCounter] = 0xff & Sample16bit;
-					wavbuf[SampleCounter+1] = 0xff & (Sample16bit >> 8);
+					wavbuf[SamplePosition] = 0xff & Sample16bit;
+					wavbuf[SamplePosition+1] = 0xff & (Sample16bit >> 8);
 
-					SampleCounter+=2;
+					SamplePosition+=2;
 				}
 				LoHiToggle++;
 			}
@@ -199,12 +199,12 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	printf("SampleCounter: %d\n", SampleCounter);
+	printf("SamplePosition: %d\n", SamplePosition);
 
 	long SampleRate = 30000;
 	byte NumChannels = 1;
 	byte BitsPerSample = 16;
-	long NumSamples = (fsize >> 2);
+	long NumSamples = (SamplePosition >> 1);
 
 	static unsigned char wave_header[44];
 
@@ -267,7 +267,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	fwrite(wave_header, 1, sizeof(wave_header), wavfile);
-	fwrite(wavbuf, 1, SampleCounter, wavfile);
+	fwrite(wavbuf, 1, SamplePosition, wavfile);
 
 	fclose(wavfile);
 
