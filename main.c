@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
 	rewind(syxfile);
 
 	byte *syxbuf = malloc(fsize);			// read syxfile into syxbuf
-	byte *wavbuf = malloc(fsize);			// make wavbuffer of atleast equal size
+	byte *wave_chunk_data = malloc(fsize);	// make buffer of atleast equal size
 	fread(syxbuf, 1, fsize, syxfile);
 	fclose(syxfile);
 
@@ -181,8 +181,8 @@ int main(int argc, char *argv[]) {
 				if (LoHiToggle %2 != 0) { // odd
 
 					Sample16bit = ((syxbuf[x-1] & 0x7f) << 9) + ((syxbuf[x] & 0x7c) << 2);
-					wavbuf[SamplePosition] = 0xff & Sample16bit;
-					wavbuf[SamplePosition+1] = 0xff & (Sample16bit >> 8);
+					wave_chunk_data[SamplePosition] = 0xff & Sample16bit;
+					wave_chunk_data[SamplePosition+1] = 0xff & (Sample16bit >> 8);
 
 					SamplePosition+=2;
 				}
@@ -206,68 +206,78 @@ int main(int argc, char *argv[]) {
 	byte BitsPerSample = 16;
 	long NumSamples = (SamplePosition >> 1);
 
-	static unsigned char wave_header[44];
+	static unsigned char wave_header_fmt[44];
 
 	// description of WAV-format: http://soundfile.sapp.org/doc/WaveFormat/
 
-	wave_header[0] = 0x52;	// RIFF
-	wave_header[1] = 0x49;
-	wave_header[2] = 0x46;
-	wave_header[3] = 0x46;
+	wave_header_fmt[0] = 0x52;	// "RIFF"
+	wave_header_fmt[1] = 0x49;
+	wave_header_fmt[2] = 0x46;
+	wave_header_fmt[3] = 0x46;
 
-	wave_header[4] = 255 & ((SampleRate * NumChannels * BitsPerSample / 8) + 36);				// ChunkSize
-	wave_header[5] = 255 & (((SampleRate * NumChannels * BitsPerSample / 8) + 36) >> 8);
-	wave_header[6] = 255 & (((SampleRate * NumChannels * BitsPerSample / 8) + 36) >> 16);
-	wave_header[7] = 255 & (((SampleRate * NumChannels * BitsPerSample / 8) + 36) >> 24);
+	wave_header_fmt[4] = 255 & ((SampleRate * NumChannels * BitsPerSample / 8) + 36);				// ChunkSize
+	wave_header_fmt[5] = 255 & (((SampleRate * NumChannels * BitsPerSample / 8) + 36) >> 8);
+	wave_header_fmt[6] = 255 & (((SampleRate * NumChannels * BitsPerSample / 8) + 36) >> 16);
+	wave_header_fmt[7] = 255 & (((SampleRate * NumChannels * BitsPerSample / 8) + 36) >> 24);
 
-	wave_header[8] = 0x57;	// WAVE
-	wave_header[9] = 0x41;
-	wave_header[10] = 0x56;
-	wave_header[11] = 0x45;
+	wave_header_fmt[8] = 0x57;	// "WAVE"
+	wave_header_fmt[9] = 0x41;
+	wave_header_fmt[10] = 0x56;
+	wave_header_fmt[11] = 0x45;
 
-	wave_header[12] = 0x66;	// SubChunk1ID ("fmt ")
-	wave_header[13] = 0x6d;
-	wave_header[14] = 0x74;
-	wave_header[15] = 0x20;
+	wave_header_fmt[12] = 0x66;	// SubChunk1ID ("fmt ")
+	wave_header_fmt[13] = 0x6d;
+	wave_header_fmt[14] = 0x74;
+	wave_header_fmt[15] = 0x20;
 
-	wave_header[16] = 0x10; // Subchunk1Size, 16 for PCM
+	wave_header_fmt[16] = 0x10; // Subchunk1Size, 16 for PCM
 
-	wave_header[20] = 0x01; // 1 = PCM / Linear quantization
+	wave_header_fmt[20] = 0x01; // 1 = PCM / Linear quantization
 
-	wave_header[22] = 255 & NumChannels; // Mono = 1, Stereo = 2, etc
+	wave_header_fmt[22] = 255 & NumChannels; // Mono = 1, Stereo = 2, etc
 
-	wave_header[24] = 255 & SampleRate;			// SampleRate
-	wave_header[25] = 255 & (SampleRate >> 8);
-	wave_header[26] = 255 & (SampleRate >> 16);
-	wave_header[27] = 255 & (SampleRate >> 24);
+	wave_header_fmt[24] = 255 & SampleRate;			// SampleRate
+	wave_header_fmt[25] = 255 & (SampleRate >> 8);
+	wave_header_fmt[26] = 255 & (SampleRate >> 16);
+	wave_header_fmt[27] = 255 & (SampleRate >> 24);
 
-	wave_header[28] = 255 & (SampleRate * NumChannels * BitsPerSample / 8);				// ByteRate
-	wave_header[29] = 255 & ((SampleRate * NumChannels * BitsPerSample / 8) >> 8);
-	wave_header[30] = 255 & ((SampleRate * NumChannels * BitsPerSample / 8) >> 16);
-	wave_header[31] = 255 & ((SampleRate * NumChannels * BitsPerSample / 8) >> 24);
+	wave_header_fmt[28] = 255 & (SampleRate * NumChannels * BitsPerSample / 8);				// ByteRate
+	wave_header_fmt[29] = 255 & ((SampleRate * NumChannels * BitsPerSample / 8) >> 8);
+	wave_header_fmt[30] = 255 & ((SampleRate * NumChannels * BitsPerSample / 8) >> 16);
+	wave_header_fmt[31] = 255 & ((SampleRate * NumChannels * BitsPerSample / 8) >> 24);
 
-	wave_header[32] = 255 & (NumChannels * BitsPerSample / 8);				// BlockAlign
-	wave_header[33] = 255 & ((NumChannels * BitsPerSample / 8) >> 8);
+	wave_header_fmt[32] = 255 & (NumChannels * BitsPerSample / 8);				// BlockAlign
+	wave_header_fmt[33] = 255 & ((NumChannels * BitsPerSample / 8) >> 8);
 
-	wave_header[34] = BitsPerSample; // BitsPerSample (16)
+	wave_header_fmt[34] = BitsPerSample; // BitsPerSample (16)
 
-	wave_header[36] = 0x64;	// SubChunk2ID ("data")
-	wave_header[37] = 0x61;
-	wave_header[38] = 0x74;
-	wave_header[39] = 0x61;
+	wave_header_fmt[36] = 0x64;	// SubChunk2ID ("data")
+	wave_header_fmt[37] = 0x61;
+	wave_header_fmt[38] = 0x74;
+	wave_header_fmt[39] = 0x61;
 
-	wave_header[40] = 255 & (NumSamples * NumChannels * BitsPerSample / 8);				// Subchunk2Size
-	wave_header[41] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 8);
-	wave_header[42] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 16);
-	wave_header[43] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 24);
+	wave_header_fmt[40] = 255 & (NumSamples * NumChannels * BitsPerSample / 8);				// Subchunk2Size
+	wave_header_fmt[41] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 8);
+	wave_header_fmt[42] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 16);
+	wave_header_fmt[43] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 24);
+
+	// https://sites.google.com/site/musicgapi/technical-documents/wav-file-format#smpl
+
+	static unsigned char wave_chunk_smpl[44]; // 0x2c + 0x18
+
+	wave_chunk_smpl[0] = 0x73;	// "smpl"
+	wave_chunk_smpl[1] = 0x6d;
+	wave_chunk_smpl[2] = 0x70;
+	wave_chunk_smpl[3] = 0x6c;
 
 	if (!(wavfile = fopen(argv[2], "wb"))) {
 	    printf("Error opening file: %s\n", strerror(errno));
 	    return(1); // returning non-zero exits the program as failed
 	}
 
-	fwrite(wave_header, 1, sizeof(wave_header), wavfile);
-	fwrite(wavbuf, 1, SamplePosition, wavfile);
+	fwrite(wave_header_fmt, 1, sizeof(wave_header_fmt), wavfile);
+	fwrite(wave_chunk_data, 1, SamplePosition, wavfile);
+	// fwrite(wave_chunk_smpl, 1, sizeof(wave_chunk_smpl), wavfile);
 
 	fclose(wavfile);
 
