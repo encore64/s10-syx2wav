@@ -40,6 +40,7 @@ int main(int argc, char *argv[]) {
 	byte *wave_chunk_data = malloc(8+fsize);	// make buffer of atleast equal size
 	static byte wave_header[12];
 	static byte wave_chunk_fmt[24];
+	static byte wave_chunk_smpl[68];
 
 	fread(syxbuf, 1, fsize, syxfile);
 	fclose(syxfile);
@@ -213,31 +214,39 @@ int main(int argc, char *argv[]) {
 
 	// description of WAV-format: http://soundfile.sapp.org/doc/WaveFormat/
 
+	long total_chunk_size = sizeof(wave_header) + sizeof(wave_chunk_fmt) + (NumSamples * NumChannels * BitsPerSample / 8) + sizeof(wave_chunk_smpl);
+
 	wave_header[0] = 0x52;	// "RIFF"
 	wave_header[1] = 0x49;
 	wave_header[2] = 0x46;
 	wave_header[3] = 0x46;
 
-	wave_header[4] = 255 & (sizeof(wave_header) + sizeof(wave_chunk_fmt) + (NumSamples * NumChannels * BitsPerSample / 8));				// Total Chunk Size
-	wave_header[5] = 255 & (sizeof(wave_header) + sizeof(wave_chunk_fmt) + (NumSamples * NumChannels * BitsPerSample / 8) >> 8);
-	wave_header[6] = 255 & (sizeof(wave_header) + sizeof(wave_chunk_fmt) + (NumSamples * NumChannels * BitsPerSample / 8) >> 16);
-	wave_header[7] = 255 & (sizeof(wave_header) + sizeof(wave_chunk_fmt) + (NumSamples * NumChannels * BitsPerSample / 8) >> 24);
+	wave_header[4] = 255 & ((total_chunk_size - 8));				// Total Chunk Size
+	wave_header[5] = 255 & ((total_chunk_size - 8) >> 8);
+	wave_header[6] = 255 & ((total_chunk_size - 8) >> 16);
+	wave_header[7] = 255 & ((total_chunk_size - 8) >> 24);
 
 	wave_header[8] = 0x57;	// "WAVE"
 	wave_header[9] = 0x41;
 	wave_header[10] = 0x56;
 	wave_header[11] = 0x45;
 
+	// fmt
+
 	wave_chunk_fmt[0] = 0x66;	// SubChunk 1 ID ("fmt ")
 	wave_chunk_fmt[1] = 0x6d;
 	wave_chunk_fmt[2] = 0x74;
 	wave_chunk_fmt[3] = 0x20;
 
-	wave_chunk_fmt[4] = 0x10;	// Chunk Data Size, 16 for PCM
+	wave_chunk_fmt[4] = 255 & ((sizeof(wave_chunk_fmt) - 8));			// Chunk Data Size, 16 for PCM
+	wave_chunk_fmt[4] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 8);
+	wave_chunk_fmt[4] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 16);
+	wave_chunk_fmt[4] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 24);
 
-	wave_chunk_fmt[8] = 0x01;	// 1 = PCM / Linear quantization
+	wave_chunk_fmt[8] = 1;	// Compression code, 1 = PCM / Linear quantization
 
 	wave_chunk_fmt[10] = 255 & NumChannels; // Mono = 1, Stereo = 2, etc
+	wave_chunk_fmt[11] = 255 & (NumChannels >> 8);
 
 	wave_chunk_fmt[12] = 255 & SampleRate;			// SampleRate
 	wave_chunk_fmt[13] = 255 & (SampleRate >> 8);
@@ -252,7 +261,10 @@ int main(int argc, char *argv[]) {
 	wave_chunk_fmt[20] = 255 & (NumChannels * BitsPerSample / 8);				// BlockAlign
 	wave_chunk_fmt[21] = 255 & ((NumChannels * BitsPerSample / 8) >> 8);
 
-	wave_chunk_fmt[22] = BitsPerSample; // BitsPerSample (16)
+	wave_chunk_fmt[22] = 255 & BitsPerSample; // Significant Bits Per Sample (16)
+	wave_chunk_fmt[23] = 255 & (BitsPerSample >> 8);
+
+	// data
 
 	wave_chunk_data[0] = 0x64;	// SubChunk 2 ID ("data")
 	wave_chunk_data[1] = 0x61;
@@ -264,16 +276,60 @@ int main(int argc, char *argv[]) {
 	wave_chunk_data[6] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 16);
 	wave_chunk_data[7] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 24);
 
-	// https://sites.google.com/site/musicgapi/technical-documents/wav-file-format#smpl
-
-	static unsigned char wave_chunk_smpl[44]; // 0x2c + 0x18
+	// smpl (https://sites.google.com/site/musicgapi/technical-documents/wav-file-format#smpl)
 
 	wave_chunk_smpl[0] = 0x73;	// "smpl"
 	wave_chunk_smpl[1] = 0x6d;
 	wave_chunk_smpl[2] = 0x70;
 	wave_chunk_smpl[3] = 0x6c;
 
-	wave_chunk_smpl[4] = 0x10; // "fmt " Chunk Data Size, 16 for PCM
+	wave_chunk_smpl[4] = 255 & ((sizeof(wave_chunk_smpl) - 8));				// Chunk Data Size
+	wave_chunk_smpl[5] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 8);
+	wave_chunk_smpl[6] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 16);
+	wave_chunk_smpl[7] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 24);
+
+	wave_chunk_smpl[8] = 0;	// Manufacturer ID
+
+	wave_chunk_smpl[12] = 0;	// Product ID
+
+	wave_chunk_smpl[16] = 0;	// Sample period
+
+	wave_chunk_smpl[20] = 60; 	// MIDI Unity Note
+
+	wave_chunk_smpl[24] = 0; 	// MIDI Pitch Fraction
+
+	wave_chunk_smpl[28] = 0;	// SMPTE Format
+
+	wave_chunk_smpl[32] = 0;	// SMPTE Offset
+
+	wave_chunk_smpl[36] = 1;	// Sample Loops
+
+	wave_chunk_smpl[40] = 0;	// Sampler Data size
+
+	// sample loop 0
+
+	wave_chunk_smpl[44] = 0;	// Cue Point ID
+
+	wave_chunk_smpl[48] = 0;	// Type - loop forward
+
+	long loop_start = 1024;
+	long loop_end = 8192;
+
+	wave_chunk_smpl[52] = 255 & (loop_start);				// Loop Start
+	wave_chunk_smpl[53] = 255 & (loop_start >> 8);
+	wave_chunk_smpl[54] = 255 & (loop_start >> 16);
+	wave_chunk_smpl[55] = 255 & (loop_start >> 24);
+
+	wave_chunk_smpl[56] = 255 & (loop_end);					// Loop End
+	wave_chunk_smpl[57] = 255 & (loop_end >> 8);
+	wave_chunk_smpl[58] = 255 & (loop_end >> 16);
+	wave_chunk_smpl[59] = 255 & (loop_end >> 24);
+
+	wave_chunk_smpl[60] = 0;		// Fraction
+
+	wave_chunk_smpl[64] = 0;		// Play Count
+
+	// 68 bytes in total
 
 	if (!(wavfile = fopen(argv[2], "wb"))) {
 	    printf("Error opening file: %s\n", strerror(errno));
@@ -283,7 +339,7 @@ int main(int argc, char *argv[]) {
 	fwrite(wave_header, 1, sizeof(wave_header), wavfile);
 	fwrite(wave_chunk_fmt, 1, sizeof(wave_chunk_fmt), wavfile);
 	fwrite(wave_chunk_data, 1, 8+SamplePosition, wavfile);
-	// fwrite(wave_chunk_smpl, 1, sizeof(wave_chunk_smpl), wavfile);
+	fwrite(wave_chunk_smpl, 1, sizeof(wave_chunk_smpl), wavfile);
 
 	fclose(wavfile);
 
