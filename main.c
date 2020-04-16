@@ -38,6 +38,7 @@ int main(int argc, char *argv[]) {
 
 	byte *syxbuf = malloc(fsize);			// read syxfile into syxbuf
 	byte *wave_chunk_data = malloc(8+fsize);	// make buffer of atleast equal size
+	byte *s10_memory = malloc(256*1024);
 	static byte wave_header[12];
 	static byte wave_chunk_fmt[24];
 	static byte wave_chunk_smpl[68];
@@ -55,6 +56,7 @@ int main(int argc, char *argv[]) {
 	byte CommandId;
 	byte ParameterId;
 	size_t x;
+	long Address;
 
 	for (x = 0; x < fsize; x++) {
 		char_temp = syxbuf[x];
@@ -66,6 +68,13 @@ int main(int argc, char *argv[]) {
 			SysexActive = 1;
 			continue;
 		}
+
+		if (char_temp == 0xf7) { // system exclusive stop
+			if (verbose) printf("System Exclusive stop. SysexCounter (minus header and stop) at: %d\n", SysexCounter-8);
+			SysexActive = 0;
+			continue;
+		}
+
 		if (SysexActive) {
 			if (SysexCounter == 0) {
 				if (char_temp != 0x41) { // Roland ID ?
@@ -138,22 +147,23 @@ int main(int argc, char *argv[]) {
 			if (SysexCounter == 4) { // Address
 				if (CommandId == 0x12) { // DT1?
 					if (verbose) printf("Address: %02hhX %02hhX %02hhX ", syxbuf[x], syxbuf[x+1] ,syxbuf[x+2]);
+					Address = (syxbuf[x] << 16) + (syxbuf[x+1] << 8) + syxbuf[x+2];
 					ParameterId = 0;
 					LoHiToggle = 0;
 
-					if ((syxbuf[x] == 0x01) && (((syxbuf[x+1] == 0x00) && (syxbuf[x+2] >= 0x00)) || ((syxbuf[x+1] == 0x00) && (syxbuf[x+2] >= 0x48)))) {
+					if (Address >= 0x00010000 && Address <= 0x00010048) {
 						ParameterId = 1;
 						if (verbose) printf("Wave parameter of block-1.");
 					}
-					if ((syxbuf[x] == 0x01) && (((syxbuf[x+1] == 0x00) && (syxbuf[x+2] >= 0x49)) || ((syxbuf[x+1] == 0x01) && (syxbuf[x+2] >= 0x11)))) {
+					if (Address >= 0x00010049 && Address <= 0x00010111) {
 						ParameterId = 1;
 						if (verbose) printf("Wave parameter of block-2.");
 					}
-					if ((syxbuf[x] == 0x01) && (((syxbuf[x+1] == 0x01) && (syxbuf[x+2] >= 0x12)) || ((syxbuf[x+1] == 0x01) && (syxbuf[x+2] >= 0x5a)))) {
+					if (Address >= 0x00010112 && Address <= 0x0001015a) {
 						ParameterId = 1;
 						if (verbose) printf("Wave parameter of block-3.");
 					}
-					if ((syxbuf[x] == 0x01) && (((syxbuf[x+1] == 0x01) && (syxbuf[x+2] >= 0x5b)) || ((syxbuf[x+1] == 0x02) && (syxbuf[x+2] >= 0x24)))) {
+					if (Address >= 0x0001015b && Address <= 0x00010224) {
 						ParameterId = 1;
 						if (verbose) printf("Wave parameter of block-4.");
 					}
@@ -183,25 +193,29 @@ int main(int argc, char *argv[]) {
 				}
 			}
 
-			if ((SysexCounter >= 7) && (ParameterId == 3) && (char_temp != 0xf7)) { // Wave data and no sysex stop
-				if (LoHiToggle %2 != 0) { // odd
-
-					Sample16bit = ((syxbuf[x-1] & 0x7f) << 9) + ((syxbuf[x] & 0x7c) << 2);
-					wave_chunk_data[8+SamplePosition] = 0xff & Sample16bit;
-					wave_chunk_data[8+SamplePosition+1] = 0xff & (Sample16bit >> 8);
-
-					SamplePosition+=2;
+			if (SysexCounter >= 7) {
+				if (ParameterId == 1) { // Wave parameter
+					if ((SysexCounter >= 7) && (SysexCounter <= 7+8)) { // Tone Name
+						if ((!verbose) && (SysexCounter == 7)) printf("Tone Name: ");
+						if (!verbose) printf("%c", syxbuf[x]);
+						if ((!verbose) && (SysexCounter == 7+8))  printf("\n");
+					}
 				}
-				LoHiToggle++;
+
+				if (ParameterId == 3) { // Wave data
+					if (LoHiToggle %2 != 0) { // odd
+
+						Sample16bit = ((syxbuf[x-1] & 0x7f) << 9) + ((syxbuf[x] & 0x7c) << 2);
+						wave_chunk_data[8+SamplePosition] = 0xff & Sample16bit;
+						wave_chunk_data[8+SamplePosition+1] = 0xff & (Sample16bit >> 8);
+
+						SamplePosition+=2;
+					}
+					LoHiToggle++;
+				}
 			}
 
 			SysexCounter++;
-		}
-
-		if (char_temp == 0xf7) { // system exclusive stop
-			if (verbose) printf("System Exclusive stop. SysexCounter at: %d\n", SysexCounter);
-			SysexActive = 0;
-			continue;
 		}
 	}
 
@@ -215,6 +229,8 @@ int main(int argc, char *argv[]) {
 	// description of WAV-format: http://soundfile.sapp.org/doc/WaveFormat/
 
 	long total_chunk_size = sizeof(wave_header) + sizeof(wave_chunk_fmt) + (NumSamples * NumChannels * BitsPerSample / 8) + sizeof(wave_chunk_smpl);
+
+	// header
 
 	wave_header[0] = 0x52;	// "RIFF"
 	wave_header[1] = 0x49;
@@ -239,9 +255,9 @@ int main(int argc, char *argv[]) {
 	wave_chunk_fmt[3] = 0x20;
 
 	wave_chunk_fmt[4] = 255 & ((sizeof(wave_chunk_fmt) - 8));			// Chunk Data Size, 16 for PCM
-	wave_chunk_fmt[4] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 8);
-	wave_chunk_fmt[4] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 16);
-	wave_chunk_fmt[4] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 24);
+	wave_chunk_fmt[5] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 8);
+	wave_chunk_fmt[6] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 16);
+	wave_chunk_fmt[7] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 24);
 
 	wave_chunk_fmt[8] = 1;	// Compression code, 1 = PCM / Linear quantization
 
