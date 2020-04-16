@@ -56,7 +56,8 @@ int main(int argc, char *argv[]) {
 	byte CommandId;
 	byte ParameterId;
 	size_t x;
-	long Address;
+	long Address, StartAddress, ManualLoopLength, ManualEndAddress, AutoLoopLength, AutoEndAddress;
+	long SampleRate = 30000;
 
 	for (x = 0; x < fsize; x++) {
 		char_temp = syxbuf[x];
@@ -195,10 +196,99 @@ int main(int argc, char *argv[]) {
 
 			if (SysexCounter >= 7) {
 				if (ParameterId == 1) { // Wave parameter
-					if ((SysexCounter >= 7) && (SysexCounter <= 7+8)) { // Tone Name
-						if ((!verbose) && (SysexCounter == 7)) printf("Tone Name: ");
-						if (!verbose) printf("%c", syxbuf[x]);
-						if ((!verbose) && (SysexCounter == 7+8))  printf("\n");
+					if ((SysexCounter >= 7) && (SysexCounter <= 7+0x08)) { // Tone Name
+						if (verbose) {
+							if (SysexCounter == 7) printf("Tone Name: ");
+							printf("%c", syxbuf[x]);
+							if (SysexCounter == 7+8) printf("\n");
+						}
+					}
+
+					if (SysexCounter == 7+0x09) { // Sampling structure
+						if (verbose) printf("Sampling structure: %d\n", syxbuf[x]);
+					}
+
+					if (SysexCounter == 7+0x0a) { // Destination bank
+						if (verbose) printf("Destination bank: %d\n", syxbuf[x]);
+					}
+
+					if (SysexCounter == 7+0x0b) { // Sampling rate
+						if (syxbuf[x] & 0x01) {
+							SampleRate = 15000;
+							if (verbose) printf("Sampling rate: 15 kHz\n");
+						} else {
+							if (verbose) printf("Sampling rate: 30 kHz\n");
+						}
+					}
+
+					if (SysexCounter == 7+0x0c) { // Loop mode / Scan Mode
+						if ((syxbuf[x] & 0x0c) == 0x00) {
+							if (verbose) printf("Loop mode: 1 shot\n");
+						}
+						if ((syxbuf[x] & 0x0c) == 0x04) {
+							if (verbose) printf("Loop mode: Manual\n");
+						}
+						if ((syxbuf[x] & 0x0c) == 0x08) {
+							if (verbose) printf("Loop mode: Auto\n");
+						}
+
+						if ((syxbuf[x] & 0x03) == 0x00) {
+							if (verbose) printf("Scan mode: Forward\n");
+						}
+						if ((syxbuf[x] & 0x03) == 0x01) {
+							if (verbose) printf("Scan mode: Alternate\n");
+						}
+						if ((syxbuf[x] & 0x03) == 0x02) {
+							if (verbose) printf("Scan mode: Backward\n");
+						}
+					}
+
+					if (SysexCounter == 7+0x0d) { // Rec key number
+						if (verbose) printf("Rec key number: %d\n", (syxbuf[x] & 0x0f) + ((syxbuf[x+1] & 0x0f) << 4));
+					}
+
+					if (SysexCounter == 7+0x11) { // Start address, Manual and auto loop length and end address
+
+						StartAddress =	// (StartAddress-65536) / 32768 seems to be the same as destination bank
+							((syxbuf[x] & 0x0f) << 8) +
+							((syxbuf[x+1] & 0x0f) << 12) +
+							((syxbuf[x+2] & 0x0f)) +
+							((syxbuf[x+3] & 0x0f) << 4) +
+							((syxbuf[x+21] & 0x0c) << 14);
+
+						ManualLoopLength =
+							((syxbuf[x+4] & 0x0f) << 8) +
+							((syxbuf[x+5] & 0x0f) << 12) +
+							((syxbuf[x+6] & 0x0f)) +
+							((syxbuf[x+7] & 0x0f) << 4) +
+							((syxbuf[x+20] & 0x0c) << 14);
+
+						ManualEndAddress =
+							((syxbuf[x+8] & 0x0f) << 8) +
+							((syxbuf[x+9] & 0x0f) << 12) +
+							((syxbuf[x+10] & 0x0f)) +
+							((syxbuf[x+11] & 0x0f) << 4) +
+							((syxbuf[x+20] & 0x03) << 16);
+
+						AutoLoopLength =
+							((syxbuf[x+12] & 0x0f) << 8) +
+							((syxbuf[x+13] & 0x0f) << 12) +
+							((syxbuf[x+14] & 0x0f)) +
+							((syxbuf[x+15] & 0x0f) << 4) +
+							((syxbuf[x+23] & 0x0c) << 14);
+
+						AutoEndAddress =
+							((syxbuf[x+16] & 0x0f) << 8) +
+							((syxbuf[x+17] & 0x0f) << 12) +
+							((syxbuf[x+18] & 0x0f)) +
+							((syxbuf[x+19] & 0x0f) << 4) +
+							((syxbuf[x+23] & 0x03) << 16);
+
+						if (verbose) printf("Start address: %ld\n\n", StartAddress);
+						if (verbose) printf("Manual Loop Length: %ld\n", ManualLoopLength);
+						if (verbose) printf("Manual End Address: %ld\n\n", ManualEndAddress);
+						if (verbose) printf("Auto Loop Length: %ld\n", AutoLoopLength);
+						if (verbose) printf("Auto End Address: %ld\n\n", AutoEndAddress);
 					}
 				}
 
@@ -221,7 +311,6 @@ int main(int argc, char *argv[]) {
 
 	if (verbose) printf("SamplePosition: %d\n", SamplePosition);
 
-	long SampleRate = 30000;
 	byte NumChannels = 1;
 	byte BitsPerSample = 16;
 	long NumSamples = (SamplePosition >> 1);
