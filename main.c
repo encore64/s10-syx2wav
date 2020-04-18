@@ -52,11 +52,14 @@ int main(int argc, char *argv[]) {
 
 	byte char_temp;
 	int SysexCounter = 0;
-	int SysexActive = 0;
+	byte SysexActive = 0;
 	byte CommandId;
 	byte ParameterId;
 	size_t x;
-	long Address, StartAddress, ManualLoopLength, ManualEndAddress, AutoLoopLength, AutoEndAddress;
+
+	// Sampler parameters
+	byte LoopMode = 0, ScanMode = 0;
+	long Address = 0, StartAddress = 0, ManualLoopLength = 0, ManualEndAddress = 0, AutoLoopLength = 0, AutoEndAddress = 0;
 	long SampleRate = 30000;
 
 	for (x = 0; x < fsize; x++) {
@@ -226,9 +229,11 @@ int main(int argc, char *argv[]) {
 							if (verbose) printf("Loop mode: 1 shot\n");
 						}
 						if ((syxbuf[x] & 0x0c) == 0x04) {
+							LoopMode = 1;
 							if (verbose) printf("Loop mode: Manual\n");
 						}
 						if ((syxbuf[x] & 0x0c) == 0x08) {
+							LoopMode = 2;
 							if (verbose) printf("Loop mode: Auto\n");
 						}
 
@@ -236,9 +241,11 @@ int main(int argc, char *argv[]) {
 							if (verbose) printf("Scan mode: Forward\n");
 						}
 						if ((syxbuf[x] & 0x03) == 0x01) {
+							ScanMode = 1;	// Alternating loop (forward/backward, also known as Ping Pong)
 							if (verbose) printf("Scan mode: Alternate\n");
 						}
 						if ((syxbuf[x] & 0x03) == 0x02) {
+							ScanMode = 2;	// Loop backward (reverse)
 							if (verbose) printf("Scan mode: Backward\n");
 						}
 					}
@@ -297,7 +304,7 @@ int main(int argc, char *argv[]) {
 
 						Sample16bit = ((syxbuf[x-1] & 0x7f) << 9) + ((syxbuf[x] & 0x7c) << 2);
 						wave_chunk_data[8+SamplePosition] = 0xff & Sample16bit;
-						wave_chunk_data[8+SamplePosition+1] = 0xff & (Sample16bit >> 8);
+						wave_chunk_data[8+SamplePosition+1] = 0xff & (Sample16bit >> 8);	// Significant Bits Per Sample (16)
 
 						SamplePosition+=2;
 					}
@@ -415,20 +422,31 @@ int main(int argc, char *argv[]) {
 
 	wave_chunk_smpl[44] = 0;	// Cue Point ID
 
-	wave_chunk_smpl[48] = 0;	// Type - loop forward
+	wave_chunk_smpl[48] = ScanMode;	// Type - loop forward
 
-	long loop_start = 1024;
-	long loop_end = 8192;
+	if (LoopMode == 1) {
+		wave_chunk_smpl[52] = 255 & ((ManualEndAddress - ManualLoopLength));				// Loop Start
+		wave_chunk_smpl[53] = 255 & ((ManualEndAddress - ManualLoopLength) >> 8);
+		wave_chunk_smpl[54] = 255 & ((ManualEndAddress - ManualLoopLength) >> 16);
+		wave_chunk_smpl[55] = 255 & ((ManualEndAddress - ManualLoopLength) >> 24);
 
-	wave_chunk_smpl[52] = 255 & (loop_start);				// Loop Start
-	wave_chunk_smpl[53] = 255 & (loop_start >> 8);
-	wave_chunk_smpl[54] = 255 & (loop_start >> 16);
-	wave_chunk_smpl[55] = 255 & (loop_start >> 24);
+		wave_chunk_smpl[56] = 255 & (ManualEndAddress);					// Loop End
+		wave_chunk_smpl[57] = 255 & (ManualEndAddress >> 8);
+		wave_chunk_smpl[58] = 255 & (ManualEndAddress >> 16);
+		wave_chunk_smpl[59] = 255 & (ManualEndAddress >> 24);
+	}
 
-	wave_chunk_smpl[56] = 255 & (loop_end);					// Loop End
-	wave_chunk_smpl[57] = 255 & (loop_end >> 8);
-	wave_chunk_smpl[58] = 255 & (loop_end >> 16);
-	wave_chunk_smpl[59] = 255 & (loop_end >> 24);
+	else if (LoopMode == 2) {
+		wave_chunk_smpl[52] = 255 & ((AutoEndAddress - AutoLoopLength));				// Loop Start
+		wave_chunk_smpl[53] = 255 & ((AutoEndAddress - AutoLoopLength) >> 8);
+		wave_chunk_smpl[54] = 255 & ((AutoEndAddress - AutoLoopLength) >> 16);
+		wave_chunk_smpl[55] = 255 & ((AutoEndAddress - AutoLoopLength) >> 24);
+
+		wave_chunk_smpl[56] = 255 & (AutoEndAddress);					// Loop End
+		wave_chunk_smpl[57] = 255 & (AutoEndAddress >> 8);
+		wave_chunk_smpl[58] = 255 & (AutoEndAddress >> 16);
+		wave_chunk_smpl[59] = 255 & (AutoEndAddress >> 24);
+	}
 
 	wave_chunk_smpl[60] = 0;		// Fraction
 
