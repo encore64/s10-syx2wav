@@ -16,7 +16,7 @@ void syx2wav (dword file_position, char const load_file1[50], char const save_fi
 }
 
 int main(int argc, char *argv[]) {
-	char verbose = 0;
+	char verbose = 1;
 
 	if (verbose) printf("*** Roland S-10 .syx to .wav conversion ***\n");
 
@@ -60,6 +60,8 @@ int main(int argc, char *argv[]) {
 	byte ParameterId;
 	size_t x;
 
+	const char *SamplingStructure[] = {"A", "B", "C", "D", "AB", "CD", "ABCD", "A/B", "C/D", "AB/CD", "A/B/C/D"};
+
 	// Sampler parameters
 	byte LoopMode = 0, ScanMode = 0;
 	dword Address = 0, StartAddress = 0, ManualLoopLength = 0, ManualEndAddress = 0, AutoLoopLength = 0, AutoEndAddress = 0;
@@ -70,14 +72,14 @@ int main(int argc, char *argv[]) {
 		//printf("%02hhX ", char_temp);
 
 		if (char_temp == 0xf0) { // system exclusive start
-			if (verbose) printf("\nSystem Exclusive start.\n");
+			if (verbose > 1) printf("\nSystem Exclusive start.\n");
 			SysexCounter = 0;
 			SysexActive = 1;
 			continue;
 		}
 
 		if (char_temp == 0xf7) { // system exclusive stop
-			if (verbose) printf("System Exclusive stop. SysexCounter (minus header and stop) at: %d\n", SysexCounter-8);
+			if (verbose > 1) printf("System Exclusive stop. SysexCounter (minus header and stop) at: %d\n", SysexCounter-8);
 			SysexActive = 0;
 			continue;
 		}
@@ -85,10 +87,10 @@ int main(int argc, char *argv[]) {
 		if (SysexActive) {
 			if (SysexCounter == 0) {
 				if (char_temp != 0x41) { // Roland ID ?
-					if (verbose) printf("Wrong manufacturer ID.\n");
+					if (verbose > 1) printf("Wrong manufacturer ID.\n");
 					SysexActive = 0;
 				} else {
-					if (verbose) printf("Roland ID found.\n");
+					if (verbose > 1) printf("Roland ID found.\n");
 				}
 				SysexCounter++;
 				continue;
@@ -96,10 +98,10 @@ int main(int argc, char *argv[]) {
 
 			if (SysexCounter == 1) {
 				if (char_temp > 0x0f) { // Device ID
-					if (verbose) printf("Wrong MIDI basic channel.\n");
+					if (verbose > 1) printf("Wrong MIDI basic channel.\n");
 					SysexActive = 0;
 				} else {
-					if (verbose) printf("MIDI basic channel: %d\n", char_temp+1);
+					if (verbose > 1) printf("MIDI basic channel: %d\n", char_temp+1);
 				}
 				SysexCounter++;
 				continue;
@@ -107,10 +109,10 @@ int main(int argc, char *argv[]) {
 
 			if (SysexCounter == 2) {
 				if (char_temp != 0x10) { // S-10 ?
-					if (verbose) printf("Wrong Model-ID.\n");
+					if (verbose > 1) printf("Wrong Model-ID.\n");
 					SysexActive = 0;
 				} else {
-					if (verbose) printf("S-10 found.\n");
+					if (verbose > 1) printf("S-10 found.\n");
 				}
 				SysexCounter++;
 				continue;
@@ -120,31 +122,31 @@ int main(int argc, char *argv[]) {
 				CommandId = char_temp;
 
 				if (CommandId == 0x11) { // RQ1?
-					if (verbose) printf("Command-ID: Request (one way).\n");
+					if (verbose > 1) printf("Command-ID: Request (one way).\n");
 				}
 				if (CommandId == 0x12) { // DT1?
-					if (verbose) printf("Command-ID: Data set (One way).\n");
+					if (verbose > 1) printf("Command-ID: Data set (One way).\n");
 				}
 				if (CommandId == 0x40) { // WSD?
-					if (verbose) printf("Command-ID: Want to send data.\n");
+					if (verbose > 1) printf("Command-ID: Want to send data.\n");
 				}
 				if (CommandId == 0x41) { // RQD?
-					if (verbose) printf("Command-ID: Request data.\n");
+					if (verbose > 1) printf("Command-ID: Request data.\n");
 				}
 				if (CommandId == 0x42) { // DAT?
-					if (verbose) printf("Command-ID: Data set.\n");
+					if (verbose > 1) printf("Command-ID: Data set.\n");
 				}
 				if (CommandId == 0x43) { // ACK?
-					if (verbose) printf("Command-ID: Acknowledge.\n");
+					if (verbose > 1) printf("Command-ID: Acknowledge.\n");
 				}
 				if (CommandId == 0x45) { // EOD?
-					if (verbose) printf("Command-ID: End of data.\n");
+					if (verbose > 1) printf("Command-ID: End of data.\n");
 				}
 				if (CommandId == 0x4e) { // ERR?
-					if (verbose) printf("Command-ID: Communication error.\n");
+					if (verbose > 1) printf("Command-ID: Communication error.\n");
 				}
 				if (CommandId == 0x4f) { // RJC?
-					if (verbose) printf("Command-ID: Rejection.\n");
+					if (verbose > 1) printf("Command-ID: Rejection.\n");
 				}
 
 				SysexCounter++;
@@ -153,31 +155,31 @@ int main(int argc, char *argv[]) {
 
 			if (SysexCounter == 4) { // Address
 				if (CommandId == 0x12) { // DT1?
-					if (verbose) printf("Address: %02hhX %02hhX %02hhX ", syxbuf[x], syxbuf[x+1] ,syxbuf[x+2]);
+					if (verbose > 1) printf("Address: %02hhX %02hhX %02hhX ", syxbuf[x], syxbuf[x+1] ,syxbuf[x+2]);
 					Address = (syxbuf[x] << 16) + (syxbuf[x+1] << 8) + syxbuf[x+2];
 					ParameterId = 0;
 					LoHiToggle = 0;
 
 					if (Address >= 0x00010000 && Address <= 0x00010048) {
 						ParameterId = 1;
-						if (verbose) printf("Wave parameter of block-1.");
+						if (verbose) printf("Wave parameter of block-1.\n");
 					}
 					if (Address >= 0x00010049 && Address <= 0x00010111) {
 						ParameterId = 1;
-						if (verbose) printf("Wave parameter of block-2.");
+						if (verbose) printf("Wave parameter of block-2.\n");
 					}
 					if (Address >= 0x00010112 && Address <= 0x0001015a) {
 						ParameterId = 1;
-						if (verbose) printf("Wave parameter of block-3.");
+						if (verbose) printf("Wave parameter of block-3.\n");
 					}
 					if (Address >= 0x0001015b && Address <= 0x00010224) {
 						ParameterId = 1;
-						if (verbose) printf("Wave parameter of block-4.");
+						if (verbose) printf("Wave parameter of block-4.\n");
 					}
 
 					if ((syxbuf[x] == 0x01) && (syxbuf[x+1] == 0x08)) {
 						ParameterId = 2;
-						if (verbose) printf("Performance parameter.");
+						if (verbose) printf("Performance parameter.\n");
 					}
 
 					/* 0x020000 - 0x117f7f
@@ -196,24 +198,23 @@ int main(int argc, char *argv[]) {
 							syxbuf[x+2];
 
 						if (SamplePosition > s10_memory_max) {
-							if (verbose) printf("SamplePosition outside S-10 memory boundary.\n");
+							if (verbose > 1) printf("SamplePosition outside S-10 memory boundary.\n");
 							break;
 						}
 					}
 
 					if ((syxbuf[x] >= 0x02) && (syxbuf[x] <= 0x05)) {
-						if (verbose) printf("Wave data of bank-1.");
+						if (verbose > 1) printf("Wave data of bank-1.\n");
 					}
 					if ((syxbuf[x] >= 0x06) && (syxbuf[x] <= 0x09)) {
-						if (verbose) printf("Wave data of bank-2.");
+						if (verbose > 1) printf("Wave data of bank-2.\n");
 					}
 					if ((syxbuf[x] >= 0x0a) && (syxbuf[x] <= 0x0d)) {
-						if (verbose) printf("Wave data of bank-3.");
+						if (verbose > 1) printf("Wave data of bank-3.\n");
 					}
 					if ((syxbuf[x] >= 0x0e) && (syxbuf[x] <= 0x11)) {
-						if (verbose) printf("Wave data of bank-4.");
+						if (verbose > 1) printf("Wave data of bank-4.\n");
 					}
-					if (verbose) printf("\n");
 				}
 			}
 
@@ -228,7 +229,9 @@ int main(int argc, char *argv[]) {
 					}
 
 					if (SysexCounter == 7+0x09) { // Sampling structure
-						if (verbose) printf("Sampling structure: %d\n", syxbuf[x]);
+						if (verbose) {
+							printf("Sampling structure: %d - %s\n", syxbuf[x], SamplingStructure[syxbuf[x]]);
+						}
 					}
 
 					if (SysexCounter == 7+0x0a) { // Destination bank
@@ -323,12 +326,12 @@ int main(int argc, char *argv[]) {
 					if (LoHiToggle %2 != 0) { // odd
 
 						Sample16bit = ((syxbuf[x-1] & 0x7f) << 9) + ((syxbuf[x] & 0x7c) << 2);
-						wave_chunk_data[8+SamplePosition] = 0xff & Sample16bit;
-						wave_chunk_data[8+SamplePosition+1] = 0xff & (Sample16bit >> 8);	// Significant Bits Per Sample (16)
+						s10_memory[SamplePosition] = 0xff & Sample16bit;
+						s10_memory[SamplePosition+1] = 0xff & (Sample16bit >> 8);	// Significant Bits Per Sample (16)
 
 						SamplePosition+=2;
 						if (SamplePosition > s10_memory_max) {
-							if (verbose) printf("SamplePosition outside S-10 memory boundary.\n");
+							if (verbose > 1) printf("SamplePosition outside S-10 memory boundary.\n");
 							break;
 						}
 					}
