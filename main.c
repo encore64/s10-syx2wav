@@ -33,12 +33,15 @@ int main(int argc, char *argv[]) {
 	}
 
 	fseek(syxfile, 0, SEEK_END);			// check length of file
-	long fsize = ftell(syxfile);
+	dword fsize = ftell(syxfile);
 	rewind(syxfile);
 
 	byte *syxbuf = malloc(fsize);			// read syxfile into syxbuf
 	byte *wave_chunk_data = malloc(8+fsize);	// make buffer of atleast equal size
-	byte *s10_memory = malloc(256*1024);
+	
+	static dword s10_memory_max = 256*1024;
+	byte *s10_memory = malloc(s10_memory_max);
+
 	static byte wave_header[12];
 	static byte wave_chunk_fmt[24];
 	static byte wave_chunk_smpl[68];
@@ -46,7 +49,7 @@ int main(int argc, char *argv[]) {
 	fread(syxbuf, 1, fsize, syxfile);
 	fclose(syxfile);
 
-	int SamplePosition = 0;
+	dword SamplePosition;
 	int LoHiToggle;
 	int Sample16bit;
 
@@ -59,8 +62,8 @@ int main(int argc, char *argv[]) {
 
 	// Sampler parameters
 	byte LoopMode = 0, ScanMode = 0;
-	long Address = 0, StartAddress = 0, ManualLoopLength = 0, ManualEndAddress = 0, AutoLoopLength = 0, AutoEndAddress = 0;
-	long SampleRate = 30000;
+	dword Address = 0, StartAddress = 0, ManualLoopLength = 0, ManualEndAddress = 0, AutoLoopLength = 0, AutoEndAddress = 0;
+	dword SampleRate = 30000;
 
 	for (x = 0; x < fsize; x++) {
 		char_temp = syxbuf[x];
@@ -177,20 +180,37 @@ int main(int argc, char *argv[]) {
 						if (verbose) printf("Performance parameter.");
 					}
 
-					if ((syxbuf[x] >= 0x02) && (syxbuf[x] <= 0x05)) {
+					/* 0x020000 - 0x117f7f
+
+					0x02-02x11 = 16 *
+					0x00-0x7f = 128 *
+					0x00-0x7f = 128 = 262144
+
+					*/
+
+					if ((syxbuf[x] >= 0x02) && (syxbuf[x] <= 0x11)) {
 						ParameterId = 3;
+						SamplePosition =
+							((syxbuf[x] - 0x02) << 14) +
+							(syxbuf[x+1] << 7) +
+							syxbuf[x+2];
+
+						if (SamplePosition > s10_memory_max) {
+							if (verbose) printf("SamplePosition outside S-10 memory boundary.\n");
+							break;
+						}
+					}
+
+					if ((syxbuf[x] >= 0x02) && (syxbuf[x] <= 0x05)) {
 						if (verbose) printf("Wave data of bank-1.");
 					}
 					if ((syxbuf[x] >= 0x06) && (syxbuf[x] <= 0x09)) {
-						ParameterId = 3;
 						if (verbose) printf("Wave data of bank-2.");
 					}
 					if ((syxbuf[x] >= 0x0a) && (syxbuf[x] <= 0x0d)) {
-						ParameterId = 3;
 						if (verbose) printf("Wave data of bank-3.");
 					}
-					if ((syxbuf[x] >= 0x0e) && (syxbuf[x] <= 0x12)) {
-						ParameterId = 3;
+					if ((syxbuf[x] >= 0x0e) && (syxbuf[x] <= 0x11)) {
 						if (verbose) printf("Wave data of bank-4.");
 					}
 					if (verbose) printf("\n");
@@ -307,6 +327,10 @@ int main(int argc, char *argv[]) {
 						wave_chunk_data[8+SamplePosition+1] = 0xff & (Sample16bit >> 8);	// Significant Bits Per Sample (16)
 
 						SamplePosition+=2;
+						if (SamplePosition > s10_memory_max) {
+							if (verbose) printf("SamplePosition outside S-10 memory boundary.\n");
+							break;
+						}
 					}
 					LoHiToggle++;
 				}
@@ -316,15 +340,15 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	if (verbose) printf("SamplePosition: %d\n", SamplePosition);
+	if (verbose) printf("SamplePosition: %ld\n", SamplePosition);
 
 	byte NumChannels = 1;
 	byte BitsPerSample = 16;
-	long NumSamples = (SamplePosition >> 1);
+	dword NumSamples = (SamplePosition >> 1);
 
 	// description of WAV-format: http://soundfile.sapp.org/doc/WaveFormat/
 
-	long total_chunk_size = sizeof(wave_header) + sizeof(wave_chunk_fmt) + (NumSamples * NumChannels * BitsPerSample / 8) + sizeof(wave_chunk_smpl);
+	dword total_chunk_size = sizeof(wave_header) + sizeof(wave_chunk_fmt) + (NumSamples * NumChannels * BitsPerSample / 8) + sizeof(wave_chunk_smpl);
 
 	// header
 
