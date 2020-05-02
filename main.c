@@ -60,7 +60,37 @@ int main(int argc, char *argv[]) {
 	byte ParameterId;
 	size_t x;
 
-	const char *SamplingStructure[] = {"A", "B", "C", "D", "AB", "CD", "ABCD", "A/B", "C/D", "AB/CD", "A/B/C/D"};
+	byte SamplingStructure = 0;
+	static byte SamplingStructureMax = 10;
+	byte SSBankOffset = 0;
+	byte SSLength = 0;
+	byte SSLoops = 0;
+
+	static char *SamplingStructureLUT[] = {	"A",
+											"B",
+											"C",
+											"D",
+											"AB",
+											"CD",
+											"ABCD",
+											"A/B",
+											"C/D",
+											"AB/CD",
+											"A/B/C/D"};
+
+	// Sampling structure array - bank offset, length, loops
+
+	static char SSBankOffsetLengthLoops[][3] = {	{0, 1, 1},
+												{1, 1, 1},
+												{2, 1, 1},
+												{3, 1, 1},
+												{0, 2, 1},
+												{2, 2, 1},
+												{0, 4, 1},
+												{0, 1, 2},
+												{2, 1, 2},
+												{0, 2, 2},
+												{0, 1, 4}};
 
 	// Sampler parameters
 	byte LoopMode = 0, ScanMode = 0;
@@ -229,8 +259,15 @@ int main(int argc, char *argv[]) {
 					}
 
 					if (SysexCounter == 7+0x09) { // Sampling structure
-						if (verbose) {
-							printf("Sampling structure: %d - %s\n", syxbuf[x], SamplingStructure[syxbuf[x]]);
+						if (syxbuf[x] <= SamplingStructureMax) {
+							SamplingStructure = syxbuf[x];
+							SSBankOffset = SSBankOffsetLengthLoops[SamplingStructure][0];
+							SSLength = SSBankOffsetLengthLoops[SamplingStructure][1];
+							SSLoops = SSBankOffsetLengthLoops[SamplingStructure][2];
+
+							if (verbose) {
+								printf("Sampling structure: %d - %s\n", SamplingStructure, SamplingStructureLUT[SamplingStructure]);
+							}
 						}
 					}
 
@@ -341,6 +378,10 @@ int main(int argc, char *argv[]) {
 
 			SysexCounter++;
 		}
+	}
+
+	for (x = 0; x < SSLoops; x++) {
+		printf("Loop: %ld offset: %ld length: %d\n", x, (SSBankOffset+x), SSLength);
 	}
 
 	if (verbose) printf("SamplePosition: %ld\n", SamplePosition);
