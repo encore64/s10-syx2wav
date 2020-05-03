@@ -58,6 +58,7 @@ int main(int argc, char *argv[]) {
 	byte SysexActive = 0;
 	byte CommandId;
 	byte ParameterId;
+	int WaveParaOffs;
 	size_t x;
 
 	byte SamplingStructure = 0;
@@ -66,31 +67,35 @@ int main(int argc, char *argv[]) {
 	byte SSLength = 0;
 	byte SSLoops = 0;
 
-	static char *SamplingStructureLUT[] = {	"A",
-											"B",
-											"C",
-											"D",
-											"AB",
-											"CD",
-											"ABCD",
-											"A/B",
-											"C/D",
-											"AB/CD",
-											"A/B/C/D"};
+	static char *SamplingStructureLUT[] = {
+		"A",
+		"B",
+		"C",
+		"D",
+		"AB",
+		"CD",
+		"ABCD",
+		"A/B",
+		"C/D",
+		"AB/CD",
+		"A/B/C/D"
+	};
 
 	// Sampling structure array - bank offset, length, loops
 
-	static char SSBankOffsetLengthLoops[][3] = {	{0, 1, 1},
-												{1, 1, 1},
-												{2, 1, 1},
-												{3, 1, 1},
-												{0, 2, 1},
-												{2, 2, 1},
-												{0, 4, 1},
-												{0, 1, 2},
-												{2, 1, 2},
-												{0, 2, 2},
-												{0, 1, 4}};
+	static char SSBankOffsetLengthLoops[][3] = {
+		{0, 1, 1},
+		{1, 1, 1},
+		{2, 1, 1},
+		{3, 1, 1},
+		{0, 2, 1},
+		{2, 2, 1},
+		{0, 4, 1},
+		{0, 1, 2},
+		{2, 1, 2},
+		{0, 2, 2},
+		{0, 1, 4}
+	};
 
 	// Sampler parameters
 	byte LoopMode = 0, ScanMode = 0;
@@ -189,6 +194,7 @@ int main(int argc, char *argv[]) {
 					Address = (syxbuf[x] << 16) + (syxbuf[x+1] << 8) + syxbuf[x+2];
 					ParameterId = 0;
 					LoHiToggle = 0;
+					WaveParaOffs = 0x00;	// reset WaveParaOffs
 
 					if (Address >= 0x00010000 && Address <= 0x00010048) {
 						ParameterId = 1;
@@ -250,15 +256,21 @@ int main(int argc, char *argv[]) {
 
 			if (SysexCounter >= 7) {
 				if (ParameterId == 1) { // Wave parameter
-					if ((SysexCounter >= 7) && (SysexCounter <= 7+0x08)) { // Tone Name
+
+					if (SysexCounter == 7+0x49) {	// When a second wave parameter block is in the same sysex chunk
+						WaveParaOffs = 0x49;
+						if (verbose > 1) printf("WaveParaOffs is: %d\n", WaveParaOffs);
+					}
+
+					if ((SysexCounter >= 7+WaveParaOffs) && (SysexCounter <= 7+WaveParaOffs+0x08)) { // Tone Name
 						if (verbose) {
-							if (SysexCounter == 7) printf("Tone Name: ");
+							if (SysexCounter == 7+WaveParaOffs) printf("Tone Name: ");
 							printf("%c", syxbuf[x]);
-							if (SysexCounter == 7+8) printf("\n");
+							if (SysexCounter == 7+WaveParaOffs+8) printf("\n");
 						}
 					}
 
-					if (SysexCounter == 7+0x09) { // Sampling structure
+					if (SysexCounter == 7+WaveParaOffs+0x09) { // Sampling structure
 						if (syxbuf[x] <= SamplingStructureMax) {
 							SamplingStructure = syxbuf[x];
 							SSBankOffset = SSBankOffsetLengthLoops[SamplingStructure][0];
@@ -271,11 +283,11 @@ int main(int argc, char *argv[]) {
 						}
 					}
 
-					if (SysexCounter == 7+0x0a) { // Destination bank
+					if (SysexCounter == 7+WaveParaOffs+0x0a) { // Destination bank
 						if (verbose) printf("Destination bank: %d\n", syxbuf[x]);
 					}
 
-					if (SysexCounter == 7+0x0b) { // Sampling rate
+					if (SysexCounter == 7+WaveParaOffs+0x0b) { // Sampling rate
 						if (syxbuf[x] & 0x01) {
 							SampleRate = 15000;
 							if (verbose) printf("Sampling rate: 15 kHz\n");
@@ -284,7 +296,7 @@ int main(int argc, char *argv[]) {
 						}
 					}
 
-					if (SysexCounter == 7+0x0c) { // Loop mode / Scan Mode
+					if (SysexCounter == 7+WaveParaOffs+0x0c) { // Loop mode / Scan Mode
 						if ((syxbuf[x] & 0x0c) == 0x00) {
 							if (verbose) printf("Loop mode: 1 shot\n");
 						}
@@ -310,11 +322,11 @@ int main(int argc, char *argv[]) {
 						}
 					}
 
-					if (SysexCounter == 7+0x0d) { // Rec key number
+					if (SysexCounter == 7+WaveParaOffs+0x0d) { // Rec key number
 						if (verbose) printf("Rec key number: %d\n", (syxbuf[x] & 0x0f) + ((syxbuf[x+1] & 0x0f) << 4));
 					}
 
-					if (SysexCounter == 7+0x11) { // Start address, Manual and auto loop length and end address
+					if (SysexCounter == 7+WaveParaOffs+0x11) { // Start address, Manual and auto loop length and end address
 
 						StartAddress =	// (StartAddress-65536) / 32768 seems to be the same as destination bank
 							((syxbuf[x] & 0x0f) << 8) +
@@ -322,6 +334,10 @@ int main(int argc, char *argv[]) {
 							((syxbuf[x+2] & 0x0f)) +
 							((syxbuf[x+3] & 0x0f) << 4) +
 							((syxbuf[x+21] & 0x0c) << 14);
+
+						if (StartAddress > 65535) { // probably always true
+							StartAddress -=65536;
+						}
 
 						ManualLoopLength =
 							((syxbuf[x+4] & 0x0f) << 8) +
@@ -336,6 +352,9 @@ int main(int argc, char *argv[]) {
 							((syxbuf[x+10] & 0x0f)) +
 							((syxbuf[x+11] & 0x0f) << 4) +
 							((syxbuf[x+20] & 0x03) << 16);
+						if (ManualEndAddress > 65535) { // probably always true
+							ManualEndAddress -=65536;
+						}
 
 						AutoLoopLength =
 							((syxbuf[x+12] & 0x0f) << 8) +
@@ -350,6 +369,9 @@ int main(int argc, char *argv[]) {
 							((syxbuf[x+18] & 0x0f)) +
 							((syxbuf[x+19] & 0x0f) << 4) +
 							((syxbuf[x+23] & 0x03) << 16);
+						if (AutoEndAddress > 65535) { // probably always true
+							AutoEndAddress -=65536;
+						}
 
 						if (verbose) printf("Start address: %ld\n\n", StartAddress);
 						if (verbose) printf("Manual Loop Length: %ld\n", ManualLoopLength);
@@ -384,7 +406,7 @@ int main(int argc, char *argv[]) {
 		printf("Loop: %ld offset: %ld length: %d\n", x, (SSBankOffset+x), SSLength);
 	}
 
-	if (verbose) printf("SamplePosition: %ld\n", SamplePosition);
+	if (verbose) printf("\nFinal SamplePosition: %ld\n", SamplePosition);
 
 	byte NumChannels = 1;
 	byte BitsPerSample = 16;
