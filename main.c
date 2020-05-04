@@ -50,22 +50,24 @@ int main(int argc, char *argv[]) {
 	fclose(syxfile);
 
 	dword SamplePosition;
-	int LoHiToggle;
+	byte LoHiToggle;
 	int Sample16bit;
 
 	byte char_temp;
-	int SysexCounter = 0;
+	dword SysexCounter = 0;
 	byte SysexActive = 0;
 	byte CommandId;
 	byte ParameterId;
-	int WaveParaOffs;
+	int WPOffs;	// Wave Parameter Offset
+	byte WPBlock; // Wave Parameter Block
 	size_t x;
 
-	byte SamplingStructure = 0;
 	static byte SamplingStructureMax = 10;
-	byte SSBankOffset = 0;
-	byte SSLength = 0;
-	byte SSLoops = 0;
+	byte
+		SSBankOffset = 0,
+		SSLength = 0,
+		SSLoops = 0;
+	dword Address;
 
 	static char *SamplingStructureLUT[] = {
 		"A",
@@ -98,9 +100,18 @@ int main(int argc, char *argv[]) {
 	};
 
 	// Sampler parameters
-	byte LoopMode = 0, ScanMode = 0;
-	dword Address = 0, StartAddress = 0, ManualLoopLength = 0, ManualEndAddress = 0, AutoLoopLength = 0, AutoEndAddress = 0;
-	dword SampleRate = 30000;
+	char ToneName[4][10]; // 9 characters + null
+	byte
+		SamplingStructure[4] = {0, 0, 0, 0},
+		LoopMode[4] = {0, 0, 0, 0},
+		ScanMode[4] = {0, 0, 0, 0};
+	dword
+		StartAddress[4] = {0, 0, 0, 0},
+		ManualLoopLength[4] = {0, 0, 0, 0},
+		ManualEndAddress[4] = {0, 0, 0, 0},
+		AutoLoopLength[4] = {0, 0, 0, 0},
+		AutoEndAddress[4] = {0, 0, 0, 0},
+		SampleRate[4] = {30000, 30000, 30000, 30000};
 
 	for (x = 0; x < fsize; x++) {
 		char_temp = syxbuf[x];
@@ -114,7 +125,7 @@ int main(int argc, char *argv[]) {
 		}
 
 		if (char_temp == 0xf7) { // system exclusive stop
-			if (verbose > 1) printf("System Exclusive stop. SysexCounter (minus header and stop) at: %d\n", SysexCounter-8);
+			if (verbose > 1) printf("System Exclusive stop. SysexCounter (minus header and stop) at: %ld\n", SysexCounter-8);
 			SysexActive = 0;
 			continue;
 		}
@@ -194,28 +205,22 @@ int main(int argc, char *argv[]) {
 					Address = (syxbuf[x] << 16) + (syxbuf[x+1] << 8) + syxbuf[x+2];
 					ParameterId = 0;
 					LoHiToggle = 0;
-					WaveParaOffs = 0x00;	// reset WaveParaOffs
+					WPOffs = 0x00;	// reset Wave Parameter Offset
 
 					if (Address >= 0x00010000 && Address <= 0x00010048) {
-						ParameterId = 1;
-						if (verbose) printf("Wave parameter of block-1.\n");
+						ParameterId = 1; WPBlock = 0; if (verbose) printf("Wave parameter of block-1.\n");
 					}
 					if (Address >= 0x00010049 && Address <= 0x00010111) {
-						ParameterId = 1;
-						if (verbose) printf("Wave parameter of block-2.\n");
+						ParameterId = 1; WPBlock = 1; if (verbose) printf("Wave parameter of block-2.\n");
 					}
 					if (Address >= 0x00010112 && Address <= 0x0001015a) {
-						ParameterId = 1;
-						if (verbose) printf("Wave parameter of block-3.\n");
+						ParameterId = 1; WPBlock = 2; if (verbose) printf("Wave parameter of block-3.\n");
 					}
 					if (Address >= 0x0001015b && Address <= 0x00010224) {
-						ParameterId = 1;
-						if (verbose) printf("Wave parameter of block-4.\n");
+						ParameterId = 1; WPBlock = 3; if (verbose) printf("Wave parameter of block-4.\n");
 					}
-
 					if ((syxbuf[x] == 0x01) && (syxbuf[x+1] == 0x08)) {
-						ParameterId = 2;
-						if (verbose) printf("Performance parameter.\n");
+						ParameterId = 2; if (verbose) printf("Performance parameter.\n");
 					}
 
 					/* 0x020000 - 0x117f7f
@@ -255,57 +260,64 @@ int main(int argc, char *argv[]) {
 			}
 
 			if (SysexCounter >= 7) {
-				if (ParameterId == 1) { // Wave parameter
+
+				// Wave parameter
+
+				if (ParameterId == 1) {
 
 					if (SysexCounter == 7+0x49) {	// When a second wave parameter block is in the same sysex chunk
-						WaveParaOffs = 0x49;
-						if (verbose > 1) printf("WaveParaOffs is: %d\n", WaveParaOffs);
+						WPOffs = 0x49;
+						WPBlock++;
+
+						if (verbose > 1) printf("WPOffs is: %d\nWPBlock is: %d\n", WPOffs, WPBlock);
 					}
 
-					if ((SysexCounter >= 7+WaveParaOffs) && (SysexCounter <= 7+WaveParaOffs+0x08)) { // Tone Name
-						if (verbose) {
-							if (SysexCounter == 7+WaveParaOffs) printf("Tone Name: ");
-							printf("%c", syxbuf[x]);
-							if (SysexCounter == 7+WaveParaOffs+8) printf("\n");
+					if ((SysexCounter >= 7+WPOffs) && (SysexCounter <= 7+WPOffs+0x08)) { // Tone Name
+						ToneName[WPBlock][SysexCounter-7-WPOffs] = syxbuf[x];
+
+						if (SysexCounter == 7+WPOffs+8) {
+							ToneName[WPBlock][9] = 0x00; // null
+
+							if (verbose) printf("Tone Name: '%s'\n", ToneName[WPBlock]);
 						}
 					}
 
-					if (SysexCounter == 7+WaveParaOffs+0x09) { // Sampling structure
+					if (SysexCounter == 7+WPOffs+0x09) { // Sampling structure
 						if (syxbuf[x] <= SamplingStructureMax) {
-							SamplingStructure = syxbuf[x];
-							SSBankOffset = SSBankOffsetLengthLoops[SamplingStructure][0];
-							SSLength = SSBankOffsetLengthLoops[SamplingStructure][1];
-							SSLoops = SSBankOffsetLengthLoops[SamplingStructure][2];
+							SamplingStructure[WPBlock] = syxbuf[x];
+							SSBankOffset = SSBankOffsetLengthLoops[SamplingStructure[WPBlock]][0];
+							SSLength = SSBankOffsetLengthLoops[SamplingStructure[WPBlock]][1];
+							SSLoops = SSBankOffsetLengthLoops[SamplingStructure[WPBlock]][2];
 
 							if (verbose) {
-								printf("Sampling structure: %d - %s\n", SamplingStructure, SamplingStructureLUT[SamplingStructure]);
+								printf("Sampling structure: %d - %s\n", SamplingStructure[WPBlock], SamplingStructureLUT[SamplingStructure[WPBlock]]);
 							}
 						}
 					}
 
-					if (SysexCounter == 7+WaveParaOffs+0x0a) { // Destination bank
+					if (SysexCounter == 7+WPOffs+0x0a) { // Destination bank (we ignore it and use the memory address instead)
 						if (verbose) printf("Destination bank: %d\n", syxbuf[x]);
 					}
 
-					if (SysexCounter == 7+WaveParaOffs+0x0b) { // Sampling rate
+					if (SysexCounter == 7+WPOffs+0x0b) { // Sampling rate
 						if (syxbuf[x] & 0x01) {
-							SampleRate = 15000;
+							SampleRate[WPBlock] = 15000;
 							if (verbose) printf("Sampling rate: 15 kHz\n");
 						} else {
 							if (verbose) printf("Sampling rate: 30 kHz\n");
 						}
 					}
 
-					if (SysexCounter == 7+WaveParaOffs+0x0c) { // Loop mode / Scan Mode
+					if (SysexCounter == 7+WPOffs+0x0c) { // Loop mode / Scan Mode
 						if ((syxbuf[x] & 0x0c) == 0x00) {
 							if (verbose) printf("Loop mode: 1 shot\n");
 						}
 						if ((syxbuf[x] & 0x0c) == 0x04) {
-							LoopMode = 1;
+							LoopMode[WPBlock] = 1;
 							if (verbose) printf("Loop mode: Manual\n");
 						}
 						if ((syxbuf[x] & 0x0c) == 0x08) {
-							LoopMode = 2;
+							LoopMode[WPBlock] = 2;
 							if (verbose) printf("Loop mode: Auto\n");
 						}
 
@@ -313,75 +325,77 @@ int main(int argc, char *argv[]) {
 							if (verbose) printf("Scan mode: Forward\n");
 						}
 						if ((syxbuf[x] & 0x03) == 0x01) {
-							ScanMode = 1;	// Alternating loop (forward/backward, also known as Ping Pong)
+							ScanMode[WPBlock] = 1;	// Alternating loop (forward/backward, also known as Ping Pong)
 							if (verbose) printf("Scan mode: Alternate\n");
 						}
 						if ((syxbuf[x] & 0x03) == 0x02) {
-							ScanMode = 2;	// Loop backward (reverse)
+							ScanMode[WPBlock] = 2;	// Loop backward (reverse)
 							if (verbose) printf("Scan mode: Backward\n");
 						}
 					}
 
-					if (SysexCounter == 7+WaveParaOffs+0x0d) { // Rec key number
+					if (SysexCounter == 7+WPOffs+0x0d) { // Rec key number
 						if (verbose) printf("Rec key number: %d\n", (syxbuf[x] & 0x0f) + ((syxbuf[x+1] & 0x0f) << 4));
 					}
 
-					if (SysexCounter == 7+WaveParaOffs+0x11) { // Start address, Manual and auto loop length and end address
+					if (SysexCounter == 7+WPOffs+0x11) { // Start address, Manual and auto loop length and end address
 
-						StartAddress =	// (StartAddress-65536) / 32768 seems to be the same as destination bank
+						StartAddress[WPBlock] =	// (StartAddress-65536) / 32768 seems to be the same as destination bank
 							((syxbuf[x] & 0x0f) << 8) +
 							((syxbuf[x+1] & 0x0f) << 12) +
 							((syxbuf[x+2] & 0x0f)) +
 							((syxbuf[x+3] & 0x0f) << 4) +
 							((syxbuf[x+21] & 0x0c) << 14);
 
-						if (StartAddress > 65535) { // probably always true
-							StartAddress -=65536;
+						if (StartAddress[WPBlock] > 65535) { // probably always true
+							StartAddress[WPBlock] -=65536;
 						}
 
-						ManualLoopLength =
+						ManualLoopLength[WPBlock] =
 							((syxbuf[x+4] & 0x0f) << 8) +
 							((syxbuf[x+5] & 0x0f) << 12) +
 							((syxbuf[x+6] & 0x0f)) +
 							((syxbuf[x+7] & 0x0f) << 4) +
 							((syxbuf[x+20] & 0x0c) << 14);
 
-						ManualEndAddress =
+						ManualEndAddress[WPBlock] =
 							((syxbuf[x+8] & 0x0f) << 8) +
 							((syxbuf[x+9] & 0x0f) << 12) +
 							((syxbuf[x+10] & 0x0f)) +
 							((syxbuf[x+11] & 0x0f) << 4) +
 							((syxbuf[x+20] & 0x03) << 16);
-						if (ManualEndAddress > 65535) { // probably always true
-							ManualEndAddress -=65536;
+						if (ManualEndAddress[WPBlock] > 65535) { // probably always true
+							ManualEndAddress[WPBlock] -=65536;
 						}
 
-						AutoLoopLength =
+						AutoLoopLength[WPBlock] =
 							((syxbuf[x+12] & 0x0f) << 8) +
 							((syxbuf[x+13] & 0x0f) << 12) +
 							((syxbuf[x+14] & 0x0f)) +
 							((syxbuf[x+15] & 0x0f) << 4) +
 							((syxbuf[x+23] & 0x0c) << 14);
 
-						AutoEndAddress =
+						AutoEndAddress[WPBlock] =
 							((syxbuf[x+16] & 0x0f) << 8) +
 							((syxbuf[x+17] & 0x0f) << 12) +
 							((syxbuf[x+18] & 0x0f)) +
 							((syxbuf[x+19] & 0x0f) << 4) +
 							((syxbuf[x+23] & 0x03) << 16);
-						if (AutoEndAddress > 65535) { // probably always true
-							AutoEndAddress -=65536;
+						if (AutoEndAddress[WPBlock] > 65535) { // probably always true
+							AutoEndAddress[WPBlock] -=65536;
 						}
 
-						if (verbose) printf("Start address: %ld\n\n", StartAddress);
-						if (verbose) printf("Manual Loop Length: %ld\n", ManualLoopLength);
-						if (verbose) printf("Manual End Address: %ld\n\n", ManualEndAddress);
-						if (verbose) printf("Auto Loop Length: %ld\n", AutoLoopLength);
-						if (verbose) printf("Auto End Address: %ld\n\n", AutoEndAddress);
+						if (verbose) printf("Start address: %ld\n\n", StartAddress[WPBlock]);
+						if (verbose) printf("Manual Loop Length: %ld\n", ManualLoopLength[WPBlock]);
+						if (verbose) printf("Manual End Address: %ld\n\n", ManualEndAddress[WPBlock]);
+						if (verbose) printf("Auto Loop Length: %ld\n", AutoLoopLength[WPBlock]);
+						if (verbose) printf("Auto End Address: %ld\n\n", AutoEndAddress[WPBlock]);
 					}
 				}
 
-				if (ParameterId == 3) { // Wave data
+				// Wave data
+
+				if (ParameterId == 3) {
 					if (LoHiToggle %2 != 0) { // odd
 
 						Sample16bit = ((syxbuf[x-1] & 0x7f) << 9) + ((syxbuf[x] & 0x7c) << 2);
@@ -450,15 +464,15 @@ int main(int argc, char *argv[]) {
 	wave_chunk_fmt[10] = 255 & NumChannels; // Mono = 1, Stereo = 2, etc
 	wave_chunk_fmt[11] = 255 & (NumChannels >> 8);
 
-	wave_chunk_fmt[12] = 255 & SampleRate;			// SampleRate
-	wave_chunk_fmt[13] = 255 & (SampleRate >> 8);
-	wave_chunk_fmt[14] = 255 & (SampleRate >> 16);
-	wave_chunk_fmt[15] = 255 & (SampleRate >> 24);
+	wave_chunk_fmt[12] = 255 & SampleRate[WPBlock];			// SampleRate
+	wave_chunk_fmt[13] = 255 & (SampleRate[WPBlock] >> 8);
+	wave_chunk_fmt[14] = 255 & (SampleRate[WPBlock] >> 16);
+	wave_chunk_fmt[15] = 255 & (SampleRate[WPBlock] >> 24);
 
-	wave_chunk_fmt[16] = 255 & (SampleRate * NumChannels * BitsPerSample / 8);				// ByteRate
-	wave_chunk_fmt[17] = 255 & ((SampleRate * NumChannels * BitsPerSample / 8) >> 8);
-	wave_chunk_fmt[18] = 255 & ((SampleRate * NumChannels * BitsPerSample / 8) >> 16);
-	wave_chunk_fmt[19] = 255 & ((SampleRate * NumChannels * BitsPerSample / 8) >> 24);
+	wave_chunk_fmt[16] = 255 & (SampleRate[WPBlock] * NumChannels * BitsPerSample / 8);				// ByteRate
+	wave_chunk_fmt[17] = 255 & ((SampleRate[WPBlock] * NumChannels * BitsPerSample / 8) >> 8);
+	wave_chunk_fmt[18] = 255 & ((SampleRate[WPBlock] * NumChannels * BitsPerSample / 8) >> 16);
+	wave_chunk_fmt[19] = 255 & ((SampleRate[WPBlock] * NumChannels * BitsPerSample / 8) >> 24);
 
 	wave_chunk_fmt[20] = 255 & (NumChannels * BitsPerSample / 8);				// BlockAlign
 	wave_chunk_fmt[21] = 255 & ((NumChannels * BitsPerSample / 8) >> 8);
@@ -512,30 +526,30 @@ int main(int argc, char *argv[]) {
 
 	wave_chunk_smpl[44] = 0;	// Cue Point ID
 
-	wave_chunk_smpl[48] = ScanMode;	// Type - loop forward
+	wave_chunk_smpl[48] = ScanMode[WPBlock];	// Type - loop forward
 
-	if (LoopMode == 1) {
-		wave_chunk_smpl[52] = 255 & ((ManualEndAddress - ManualLoopLength));				// Loop Start
-		wave_chunk_smpl[53] = 255 & ((ManualEndAddress - ManualLoopLength) >> 8);
-		wave_chunk_smpl[54] = 255 & ((ManualEndAddress - ManualLoopLength) >> 16);
-		wave_chunk_smpl[55] = 255 & ((ManualEndAddress - ManualLoopLength) >> 24);
+	if (LoopMode[WPBlock] == 1) {
+		wave_chunk_smpl[52] = 255 & ((ManualEndAddress[WPBlock] - ManualLoopLength[WPBlock]));				// Loop Start
+		wave_chunk_smpl[53] = 255 & ((ManualEndAddress[WPBlock] - ManualLoopLength[WPBlock]) >> 8);
+		wave_chunk_smpl[54] = 255 & ((ManualEndAddress[WPBlock] - ManualLoopLength[WPBlock]) >> 16);
+		wave_chunk_smpl[55] = 255 & ((ManualEndAddress[WPBlock] - ManualLoopLength[WPBlock]) >> 24);
 
-		wave_chunk_smpl[56] = 255 & (ManualEndAddress);					// Loop End
-		wave_chunk_smpl[57] = 255 & (ManualEndAddress >> 8);
-		wave_chunk_smpl[58] = 255 & (ManualEndAddress >> 16);
-		wave_chunk_smpl[59] = 255 & (ManualEndAddress >> 24);
+		wave_chunk_smpl[56] = 255 & (ManualEndAddress[WPBlock]);					// Loop End
+		wave_chunk_smpl[57] = 255 & (ManualEndAddress[WPBlock] >> 8);
+		wave_chunk_smpl[58] = 255 & (ManualEndAddress[WPBlock] >> 16);
+		wave_chunk_smpl[59] = 255 & (ManualEndAddress[WPBlock] >> 24);
 	}
 
-	else if (LoopMode == 2) {
-		wave_chunk_smpl[52] = 255 & ((AutoEndAddress - AutoLoopLength));				// Loop Start
-		wave_chunk_smpl[53] = 255 & ((AutoEndAddress - AutoLoopLength) >> 8);
-		wave_chunk_smpl[54] = 255 & ((AutoEndAddress - AutoLoopLength) >> 16);
-		wave_chunk_smpl[55] = 255 & ((AutoEndAddress - AutoLoopLength) >> 24);
+	else if (LoopMode[WPBlock] == 2) {
+		wave_chunk_smpl[52] = 255 & ((AutoEndAddress[WPBlock] - AutoLoopLength[WPBlock]));				// Loop Start
+		wave_chunk_smpl[53] = 255 & ((AutoEndAddress[WPBlock] - AutoLoopLength[WPBlock]) >> 8);
+		wave_chunk_smpl[54] = 255 & ((AutoEndAddress[WPBlock] - AutoLoopLength[WPBlock]) >> 16);
+		wave_chunk_smpl[55] = 255 & ((AutoEndAddress[WPBlock] - AutoLoopLength[WPBlock]) >> 24);
 
-		wave_chunk_smpl[56] = 255 & (AutoEndAddress);					// Loop End
-		wave_chunk_smpl[57] = 255 & (AutoEndAddress >> 8);
-		wave_chunk_smpl[58] = 255 & (AutoEndAddress >> 16);
-		wave_chunk_smpl[59] = 255 & (AutoEndAddress >> 24);
+		wave_chunk_smpl[56] = 255 & (AutoEndAddress[WPBlock]);					// Loop End
+		wave_chunk_smpl[57] = 255 & (AutoEndAddress[WPBlock] >> 8);
+		wave_chunk_smpl[58] = 255 & (AutoEndAddress[WPBlock] >> 16);
+		wave_chunk_smpl[59] = 255 & (AutoEndAddress[WPBlock] >> 24);
 	}
 
 	wave_chunk_smpl[60] = 0;		// Fraction
