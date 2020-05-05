@@ -37,7 +37,6 @@ int main(int argc, char *argv[]) {
 	rewind(syxfile);
 
 	byte *syxbuf = malloc(fsize);			// read syxfile into syxbuf
-	byte *wave_chunk_data = malloc(8+fsize);	// make buffer of atleast equal size
 	
 	static dword s10_memory_max = 256*1024;
 	byte *s10_memory = malloc(s10_memory_max);
@@ -45,6 +44,7 @@ int main(int argc, char *argv[]) {
 	static byte wave_header[12];
 	static byte wave_chunk_fmt[24];
 	static byte wave_chunk_smpl[68];
+	static byte wave_chunk_data[8];
 
 	fread(syxbuf, 1, fsize, syxfile);
 	fclose(syxfile);
@@ -358,6 +358,8 @@ int main(int argc, char *argv[]) {
 							((syxbuf[x+7] & 0x0f) << 4) +
 							((syxbuf[x+20] & 0x0c) << 14);
 
+						ManualLoopLength[WPBlock]--;
+
 						ManualEndAddress[WPBlock] =
 							((syxbuf[x+8] & 0x0f) << 8) +
 							((syxbuf[x+9] & 0x0f) << 12) +
@@ -368,12 +370,16 @@ int main(int argc, char *argv[]) {
 							ManualEndAddress[WPBlock] -=65536;
 						}
 
+						ManualEndAddress[WPBlock] -= StartAddress[WPBlock];
+
 						AutoLoopLength[WPBlock] =
 							((syxbuf[x+12] & 0x0f) << 8) +
 							((syxbuf[x+13] & 0x0f) << 12) +
 							((syxbuf[x+14] & 0x0f)) +
 							((syxbuf[x+15] & 0x0f) << 4) +
 							((syxbuf[x+23] & 0x0c) << 14);
+
+						AutoLoopLength[WPBlock]--;
 
 						AutoEndAddress[WPBlock] =
 							((syxbuf[x+16] & 0x0f) << 8) +
@@ -416,159 +422,163 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	for (x = 0; x < SSLoops; x++) {
-		printf("Loop: %ld offset: %ld length: %d\n", x, (SSBankOffset+x), SSLength);
-	}
-
 	if (verbose) printf("\nFinal SamplePosition: %ld\n", SamplePosition);
 
 	byte NumChannels = 1;
 	byte BitsPerSample = 16;
-	dword NumSamples = (SamplePosition >> 1);
+	dword
+		NumSamples,
+		total_chunk_size;
 
-	// description of WAV-format: http://soundfile.sapp.org/doc/WaveFormat/
+	for (x = 0; x < SSLoops; x++) {
+		NumSamples = (SSLength * (s10_memory_max >> 3));
+		printf("Loop: %ld offset: %ld length: %d, %ld\n", x, (SSBankOffset+x), SSLength, NumSamples);
 
-	dword total_chunk_size = sizeof(wave_header) + sizeof(wave_chunk_fmt) + (NumSamples * NumChannels * BitsPerSample / 8) + sizeof(wave_chunk_smpl);
+		// description of WAV-format: http://soundfile.sapp.org/doc/WaveFormat/
 
-	// header
+		total_chunk_size = sizeof(wave_header) + sizeof(wave_chunk_fmt) + (NumSamples * NumChannels * BitsPerSample / 8) + sizeof(wave_chunk_smpl);
 
-	wave_header[0] = 0x52;	// "RIFF"
-	wave_header[1] = 0x49;
-	wave_header[2] = 0x46;
-	wave_header[3] = 0x46;
+		// header
 
-	wave_header[4] = 255 & ((total_chunk_size - 8));				// Total Chunk Size
-	wave_header[5] = 255 & ((total_chunk_size - 8) >> 8);
-	wave_header[6] = 255 & ((total_chunk_size - 8) >> 16);
-	wave_header[7] = 255 & ((total_chunk_size - 8) >> 24);
+		wave_header[0] = 0x52;	// "RIFF"
+		wave_header[1] = 0x49;
+		wave_header[2] = 0x46;
+		wave_header[3] = 0x46;
 
-	wave_header[8] = 0x57;	// "WAVE"
-	wave_header[9] = 0x41;
-	wave_header[10] = 0x56;
-	wave_header[11] = 0x45;
+		wave_header[4] = 255 & ((total_chunk_size - 8));				// Total Chunk Size
+		wave_header[5] = 255 & ((total_chunk_size - 8) >> 8);
+		wave_header[6] = 255 & ((total_chunk_size - 8) >> 16);
+		wave_header[7] = 255 & ((total_chunk_size - 8) >> 24);
 
-	// fmt
+		wave_header[8] = 0x57;	// "WAVE"
+		wave_header[9] = 0x41;
+		wave_header[10] = 0x56;
+		wave_header[11] = 0x45;
 
-	wave_chunk_fmt[0] = 0x66;	// SubChunk 1 ID ("fmt ")
-	wave_chunk_fmt[1] = 0x6d;
-	wave_chunk_fmt[2] = 0x74;
-	wave_chunk_fmt[3] = 0x20;
+		// fmt
 
-	wave_chunk_fmt[4] = 255 & ((sizeof(wave_chunk_fmt) - 8));			// Chunk Data Size, 16 for PCM
-	wave_chunk_fmt[5] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 8);
-	wave_chunk_fmt[6] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 16);
-	wave_chunk_fmt[7] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 24);
+		wave_chunk_fmt[0] = 0x66;	// SubChunk 1 ID ("fmt ")
+		wave_chunk_fmt[1] = 0x6d;
+		wave_chunk_fmt[2] = 0x74;
+		wave_chunk_fmt[3] = 0x20;
 
-	wave_chunk_fmt[8] = 1;	// Compression code, 1 = PCM / Linear quantization
+		wave_chunk_fmt[4] = 255 & ((sizeof(wave_chunk_fmt) - 8));			// Chunk Data Size, 16 for PCM
+		wave_chunk_fmt[5] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 8);
+		wave_chunk_fmt[6] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 16);
+		wave_chunk_fmt[7] = 255 & ((sizeof(wave_chunk_fmt) - 8) >> 24);
 
-	wave_chunk_fmt[10] = 255 & NumChannels; // Mono = 1, Stereo = 2, etc
-	wave_chunk_fmt[11] = 255 & (NumChannels >> 8);
+		wave_chunk_fmt[8] = 1;	// Compression code, 1 = PCM / Linear quantization
 
-	wave_chunk_fmt[12] = 255 & SampleRate[WPBlock];			// SampleRate
-	wave_chunk_fmt[13] = 255 & (SampleRate[WPBlock] >> 8);
-	wave_chunk_fmt[14] = 255 & (SampleRate[WPBlock] >> 16);
-	wave_chunk_fmt[15] = 255 & (SampleRate[WPBlock] >> 24);
+		wave_chunk_fmt[10] = 255 & NumChannels; // Mono = 1, Stereo = 2, etc
+		wave_chunk_fmt[11] = 255 & (NumChannels >> 8);
 
-	wave_chunk_fmt[16] = 255 & (SampleRate[WPBlock] * NumChannels * BitsPerSample / 8);				// ByteRate
-	wave_chunk_fmt[17] = 255 & ((SampleRate[WPBlock] * NumChannels * BitsPerSample / 8) >> 8);
-	wave_chunk_fmt[18] = 255 & ((SampleRate[WPBlock] * NumChannels * BitsPerSample / 8) >> 16);
-	wave_chunk_fmt[19] = 255 & ((SampleRate[WPBlock] * NumChannels * BitsPerSample / 8) >> 24);
+		wave_chunk_fmt[12] = 255 & SampleRate[x];			// SampleRate
+		wave_chunk_fmt[13] = 255 & (SampleRate[x] >> 8);
+		wave_chunk_fmt[14] = 255 & (SampleRate[x] >> 16);
+		wave_chunk_fmt[15] = 255 & (SampleRate[x] >> 24);
 
-	wave_chunk_fmt[20] = 255 & (NumChannels * BitsPerSample / 8);				// BlockAlign
-	wave_chunk_fmt[21] = 255 & ((NumChannels * BitsPerSample / 8) >> 8);
+		wave_chunk_fmt[16] = 255 & (SampleRate[x] * NumChannels * BitsPerSample / 8);				// ByteRate
+		wave_chunk_fmt[17] = 255 & ((SampleRate[x] * NumChannels * BitsPerSample / 8) >> 8);
+		wave_chunk_fmt[18] = 255 & ((SampleRate[x] * NumChannels * BitsPerSample / 8) >> 16);
+		wave_chunk_fmt[19] = 255 & ((SampleRate[x] * NumChannels * BitsPerSample / 8) >> 24);
 
-	wave_chunk_fmt[22] = 255 & BitsPerSample; // Significant Bits Per Sample (16)
-	wave_chunk_fmt[23] = 255 & (BitsPerSample >> 8);
+		wave_chunk_fmt[20] = 255 & (NumChannels * BitsPerSample / 8);				// BlockAlign
+		wave_chunk_fmt[21] = 255 & ((NumChannels * BitsPerSample / 8) >> 8);
 
-	// data
+		wave_chunk_fmt[22] = 255 & BitsPerSample; // Significant Bits Per Sample (16)
+		wave_chunk_fmt[23] = 255 & (BitsPerSample >> 8);
 
-	wave_chunk_data[0] = 0x64;	// SubChunk 2 ID ("data")
-	wave_chunk_data[1] = 0x61;
-	wave_chunk_data[2] = 0x74;
-	wave_chunk_data[3] = 0x61;
+		// data
 
-	wave_chunk_data[4] = 255 & (NumSamples * NumChannels * BitsPerSample / 8);				// Chunk Data Size
-	wave_chunk_data[5] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 8);
-	wave_chunk_data[6] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 16);
-	wave_chunk_data[7] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 24);
+		wave_chunk_data[0] = 0x64;	// SubChunk 2 ID ("data")
+		wave_chunk_data[1] = 0x61;
+		wave_chunk_data[2] = 0x74;
+		wave_chunk_data[3] = 0x61;
 
-	// smpl (https://sites.google.com/site/musicgapi/technical-documents/wav-file-format#smpl)
+		wave_chunk_data[4] = 255 & (NumSamples * NumChannels * BitsPerSample / 8);				// Chunk Data Size
+		wave_chunk_data[5] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 8);
+		wave_chunk_data[6] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 16);
+		wave_chunk_data[7] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 24);
 
-	wave_chunk_smpl[0] = 0x73;	// "smpl"
-	wave_chunk_smpl[1] = 0x6d;
-	wave_chunk_smpl[2] = 0x70;
-	wave_chunk_smpl[3] = 0x6c;
+		// smpl (https://sites.google.com/site/musicgapi/technical-documents/wav-file-format#smpl)
 
-	wave_chunk_smpl[4] = 255 & ((sizeof(wave_chunk_smpl) - 8));				// Chunk Data Size
-	wave_chunk_smpl[5] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 8);
-	wave_chunk_smpl[6] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 16);
-	wave_chunk_smpl[7] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 24);
+		wave_chunk_smpl[0] = 0x73;	// "smpl"
+		wave_chunk_smpl[1] = 0x6d;
+		wave_chunk_smpl[2] = 0x70;
+		wave_chunk_smpl[3] = 0x6c;
 
-	wave_chunk_smpl[8] = 0;	// Manufacturer ID
+		wave_chunk_smpl[4] = 255 & ((sizeof(wave_chunk_smpl) - 8));				// Chunk Data Size
+		wave_chunk_smpl[5] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 8);
+		wave_chunk_smpl[6] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 16);
+		wave_chunk_smpl[7] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 24);
 
-	wave_chunk_smpl[12] = 0;	// Product ID
+		wave_chunk_smpl[8] = 0;	// Manufacturer ID
 
-	wave_chunk_smpl[16] = 0;	// Sample period
+		wave_chunk_smpl[12] = 0;	// Product ID
 
-	wave_chunk_smpl[20] = 60; 	// MIDI Unity Note
+		wave_chunk_smpl[16] = 0;	// Sample period
 
-	wave_chunk_smpl[24] = 0; 	// MIDI Pitch Fraction
+		wave_chunk_smpl[20] = 60; 	// MIDI Unity Note
 
-	wave_chunk_smpl[28] = 0;	// SMPTE Format
+		wave_chunk_smpl[24] = 0; 	// MIDI Pitch Fraction
 
-	wave_chunk_smpl[32] = 0;	// SMPTE Offset
+		wave_chunk_smpl[28] = 0;	// SMPTE Format
 
-	wave_chunk_smpl[36] = 1;	// Sample Loops
+		wave_chunk_smpl[32] = 0;	// SMPTE Offset
 
-	wave_chunk_smpl[40] = 0;	// Sampler Data size
+		wave_chunk_smpl[36] = 1;	// Sample Loops
 
-	// sample loop 0
+		wave_chunk_smpl[40] = 0;	// Sampler Data size
 
-	wave_chunk_smpl[44] = 0;	// Cue Point ID
+		// sample loop 0
 
-	wave_chunk_smpl[48] = ScanMode[WPBlock];	// Type - loop forward
+		wave_chunk_smpl[44] = 0;	// Cue Point ID
 
-	if (LoopMode[WPBlock] == 1) {
-		wave_chunk_smpl[52] = 255 & ((ManualEndAddress[WPBlock] - ManualLoopLength[WPBlock]));				// Loop Start
-		wave_chunk_smpl[53] = 255 & ((ManualEndAddress[WPBlock] - ManualLoopLength[WPBlock]) >> 8);
-		wave_chunk_smpl[54] = 255 & ((ManualEndAddress[WPBlock] - ManualLoopLength[WPBlock]) >> 16);
-		wave_chunk_smpl[55] = 255 & ((ManualEndAddress[WPBlock] - ManualLoopLength[WPBlock]) >> 24);
+		wave_chunk_smpl[48] = ScanMode[x];	// Type - loop forward
 
-		wave_chunk_smpl[56] = 255 & (ManualEndAddress[WPBlock]);					// Loop End
-		wave_chunk_smpl[57] = 255 & (ManualEndAddress[WPBlock] >> 8);
-		wave_chunk_smpl[58] = 255 & (ManualEndAddress[WPBlock] >> 16);
-		wave_chunk_smpl[59] = 255 & (ManualEndAddress[WPBlock] >> 24);
+		if (LoopMode[x] == 1) {
+			wave_chunk_smpl[52] = 255 & ((ManualEndAddress[x] - ManualLoopLength[x]));				// Loop Start
+			wave_chunk_smpl[53] = 255 & ((ManualEndAddress[x] - ManualLoopLength[x]) >> 8);
+			wave_chunk_smpl[54] = 255 & ((ManualEndAddress[x] - ManualLoopLength[x]) >> 16);
+			wave_chunk_smpl[55] = 255 & ((ManualEndAddress[x] - ManualLoopLength[x]) >> 24);
+
+			wave_chunk_smpl[56] = 255 & (ManualEndAddress[x]);					// Loop End
+			wave_chunk_smpl[57] = 255 & (ManualEndAddress[x] >> 8);
+			wave_chunk_smpl[58] = 255 & (ManualEndAddress[x] >> 16);
+			wave_chunk_smpl[59] = 255 & (ManualEndAddress[x] >> 24);
+		}
+
+		else if (LoopMode[x] == 2) {
+			wave_chunk_smpl[52] = 255 & ((AutoEndAddress[x] - AutoLoopLength[x]));				// Loop Start
+			wave_chunk_smpl[53] = 255 & ((AutoEndAddress[x] - AutoLoopLength[x]) >> 8);
+			wave_chunk_smpl[54] = 255 & ((AutoEndAddress[x] - AutoLoopLength[x]) >> 16);
+			wave_chunk_smpl[55] = 255 & ((AutoEndAddress[x] - AutoLoopLength[x]) >> 24);
+
+			wave_chunk_smpl[56] = 255 & (AutoEndAddress[x]);					// Loop End
+			wave_chunk_smpl[57] = 255 & (AutoEndAddress[x] >> 8);
+			wave_chunk_smpl[58] = 255 & (AutoEndAddress[x] >> 16);
+			wave_chunk_smpl[59] = 255 & (AutoEndAddress[x] >> 24);
+		}
+
+		wave_chunk_smpl[60] = 0;		// Fraction
+
+		wave_chunk_smpl[64] = 0;		// Play Count
+
+		// 68 bytes in total
+
+		if (!(wavfile = fopen(argv[2], "wb"))) {
+		    printf("Error opening file: %s\n", strerror(errno));
+		    return(1); // returning non-zero exits the program as failed
+		}
+
+		fwrite(wave_header, 1, sizeof(wave_header), wavfile);
+		fwrite(wave_chunk_fmt, 1, sizeof(wave_chunk_fmt), wavfile);
+		fwrite(wave_chunk_data, 1, 8, wavfile);
+		fwrite(s10_memory+(StartAddress[x] << 1), 1, (NumSamples << 1), wavfile);
+		fwrite(wave_chunk_smpl, 1, sizeof(wave_chunk_smpl), wavfile);
+
+		fclose(wavfile);
 	}
-
-	else if (LoopMode[WPBlock] == 2) {
-		wave_chunk_smpl[52] = 255 & ((AutoEndAddress[WPBlock] - AutoLoopLength[WPBlock]));				// Loop Start
-		wave_chunk_smpl[53] = 255 & ((AutoEndAddress[WPBlock] - AutoLoopLength[WPBlock]) >> 8);
-		wave_chunk_smpl[54] = 255 & ((AutoEndAddress[WPBlock] - AutoLoopLength[WPBlock]) >> 16);
-		wave_chunk_smpl[55] = 255 & ((AutoEndAddress[WPBlock] - AutoLoopLength[WPBlock]) >> 24);
-
-		wave_chunk_smpl[56] = 255 & (AutoEndAddress[WPBlock]);					// Loop End
-		wave_chunk_smpl[57] = 255 & (AutoEndAddress[WPBlock] >> 8);
-		wave_chunk_smpl[58] = 255 & (AutoEndAddress[WPBlock] >> 16);
-		wave_chunk_smpl[59] = 255 & (AutoEndAddress[WPBlock] >> 24);
-	}
-
-	wave_chunk_smpl[60] = 0;		// Fraction
-
-	wave_chunk_smpl[64] = 0;		// Play Count
-
-	// 68 bytes in total
-
-	if (!(wavfile = fopen(argv[2], "wb"))) {
-	    printf("Error opening file: %s\n", strerror(errno));
-	    return(1); // returning non-zero exits the program as failed
-	}
-
-	fwrite(wave_header, 1, sizeof(wave_header), wavfile);
-	fwrite(wave_chunk_fmt, 1, sizeof(wave_chunk_fmt), wavfile);
-	fwrite(wave_chunk_data, 1, 8+SamplePosition, wavfile);
-	fwrite(wave_chunk_smpl, 1, sizeof(wave_chunk_smpl), wavfile);
-
-	fclose(wavfile);
 
 	syx2wav(0x0000, argv[1], argv[2]);
 
