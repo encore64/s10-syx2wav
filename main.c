@@ -267,9 +267,13 @@ int main(int argc, char *argv[]) {
 
 					if (SysexCounter == 7+0x49) {	// When a second wave parameter block is in the same sysex chunk
 						WPOffs = 0x49;
-						WPBlock++;
 
-						if (verbose > 1) printf("WPOffs is: %d\nWPBlock is: %d\n", WPOffs, WPBlock);
+						if (verbose > 1) printf("WPOffs is: %d\n", WPOffs);
+					}
+
+					if (SysexCounter == 7+WPOffs) {
+						WPBlock = syxbuf[x + 0x0a]; // Destination bank (we set this early / first as we rely on it instead of memory address)
+						if (verbose) printf("Destination bank: %d\n", WPBlock+1);
 					}
 
 					if ((SysexCounter >= 7+WPOffs) && (SysexCounter <= 7+WPOffs+0x08)) { // Tone Name
@@ -295,9 +299,7 @@ int main(int argc, char *argv[]) {
 						}
 					}
 
-					if (SysexCounter == 7+WPOffs+0x0a) { // Destination bank (we ignore it and use the memory address instead)
-						if (verbose) printf("Destination bank: %d\n", syxbuf[x]);
-					}
+					// (SysexCounter == 7+WPOffs+0x0a) { // Destination bank
 
 					if (SysexCounter == 7+WPOffs+0x0b) { // Sampling rate
 						if (syxbuf[x] & 0x01) {
@@ -391,11 +393,13 @@ int main(int argc, char *argv[]) {
 							AutoEndAddress[WPBlock] -=65536;
 						}
 
-						if (verbose) printf("Start address: %ld\n\n", StartAddress[WPBlock]);
+						AutoEndAddress[WPBlock] -= StartAddress[WPBlock];
+
+						if (verbose) printf("Start Address: %ld\n\n", StartAddress[WPBlock]);
 						if (verbose) printf("Manual Loop Length: %ld\n", ManualLoopLength[WPBlock]);
-						if (verbose) printf("Manual End Address: %ld\n\n", ManualEndAddress[WPBlock]);
+						if (verbose) printf("Manual End Address (minus Start Address): %ld\n\n", ManualEndAddress[WPBlock]);
 						if (verbose) printf("Auto Loop Length: %ld\n", AutoLoopLength[WPBlock]);
-						if (verbose) printf("Auto End Address: %ld\n\n", AutoEndAddress[WPBlock]);
+						if (verbose) printf("Auto End Address (minus Start Address): %ld\n\n", AutoEndAddress[WPBlock]);
 					}
 				}
 
@@ -430,7 +434,7 @@ int main(int argc, char *argv[]) {
 		NumSamples,
 		total_chunk_size;
 
-	for (x = 0; x < SSLoops; x++) {
+	for (x = SSBankOffset; x < (SSLoops+SSBankOffset); x++) {
 		NumSamples = (SSLength * (s10_memory_max >> 3));
 		printf("Loop: %ld offset: %ld length: %d, %ld\n", x, (SSBankOffset+x), SSLength, NumSamples);
 
@@ -574,6 +578,7 @@ int main(int argc, char *argv[]) {
 		fwrite(wave_header, 1, sizeof(wave_header), wavfile);
 		fwrite(wave_chunk_fmt, 1, sizeof(wave_chunk_fmt), wavfile);
 		fwrite(wave_chunk_data, 1, 8, wavfile);
+
 		fwrite(s10_memory+(StartAddress[x] << 1), 1, (NumSamples << 1), wavfile);
 		fwrite(wave_chunk_smpl, 1, sizeof(wave_chunk_smpl), wavfile);
 
