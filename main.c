@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,22 +11,57 @@ typedef unsigned long dword;
 
 // -----------------------------------------------------------------------------
 
-void syx2wav (dword file_position, char const load_file1[50], char const save_file[50])
-{
-	return;
+void strip_ext(char *fname) {
+    char *end = fname + strlen(fname);
+
+    while (end > fname && *end != '.' && *end != '\\' && *end != '/') {
+        --end;
+    }
+    if ((end > fname && *end == '.') &&
+        (*(end - 1) != '\\' && *(end - 1) != '/')) {
+        *end = '\0';
+    }
 }
+
+// -----------------------------------------------------------------------------
+
+char *trimwhitespace(char *str) {
+	char *end;
+
+	// Trim leading space
+	while(isspace((unsigned char)*str)) str++;
+
+	if(*str == 0)  // All spaces?
+	return str;
+
+	// Trim trailing space
+	end = str + strlen(str) - 1;
+	while(end > str && isspace((unsigned char)*end)) end--;
+
+	// Write new null terminator character
+	end[1] = '\0';
+
+	return str;
+}
+
+// -----------------------------------------------------------------------------
 
 int main(int argc, char *argv[]) {
 	char verbose = 1;
 
 	if (verbose) printf("*** Roland S-10 .syx to .wav conversion ***\n");
 
-	if (argc < 3) {
-		printf("\nError: Too few arguments.\nSyntax should be: s10-syx2wav input.syx output.wav\n");
+	if (argc < 2) {
+		printf("\nError: Too few arguments.\nSyntax should be: s10-syx2wav input.syx\n");
 		return 1;
 	}
 
 	FILE *syxfile, *wavfile;
+	//char *prefixless = malloc(strlen(argv[1]));
+	//char *wavname = malloc(sizeof(prefixless)+30);
+	char prefixless[1000];
+	char wavname[1000];
+
 
 	if (!(syxfile = fopen(argv[1], "rb"))) {
 	    printf("Error opening file: %s\n", strerror(errno));
@@ -77,10 +113,10 @@ int main(int argc, char *argv[]) {
 		"AB",
 		"CD",
 		"ABCD",
-		"A/B",
-		"C/D",
-		"AB/CD",
-		"A/B/C/D"
+		"A-B",
+		"C-D",
+		"AB-CD",
+		"A-B-C-D"
 	};
 
 	// Sampling structure array - bank offset, length, loops
@@ -279,10 +315,14 @@ int main(int argc, char *argv[]) {
 					if ((SysexCounter >= 7+WPOffs) && (SysexCounter <= 7+WPOffs+0x08)) { // Tone Name
 						ToneName[WPBlock][SysexCounter-7-WPOffs] = syxbuf[x];
 
+						if (ToneName[WPBlock][SysexCounter-7-WPOffs] < 32) {
+							ToneName[WPBlock][SysexCounter-7-WPOffs] = 32;	// replace any character below 'space' with space
+						}
+
 						if (SysexCounter == 7+WPOffs+8) {
 							ToneName[WPBlock][9] = 0x00; // null
 
-							if (verbose) printf("Tone Name: '%s'\n", ToneName[WPBlock]);
+							if (verbose) printf("Tone Name: '%s'\n", trimwhitespace(ToneName[WPBlock]));
 						}
 					}
 
@@ -436,7 +476,6 @@ int main(int argc, char *argv[]) {
 
 	for (x = SSBankOffset; x < (SSLoops+SSBankOffset); x++) {
 		NumSamples = (SSLength * (s10_memory_max >> 3));
-		printf("Loop: %ld offset: %ld length: %d, %ld\n", x, (SSBankOffset+x), SSLength, NumSamples);
 
 		// description of WAV-format: http://soundfile.sapp.org/doc/WaveFormat/
 
@@ -570,7 +609,17 @@ int main(int argc, char *argv[]) {
 
 		// 68 bytes in total
 
-		if (!(wavfile = fopen(argv[2], "wb"))) {
+		strcpy(prefixless,argv[1]);
+		strip_ext(prefixless);
+
+
+		sprintf(wavname, "%s %s (%s) %s.wav", prefixless, SamplingStructureLUT[SamplingStructure[x]], SamplingStructureLUT[x], trimwhitespace(ToneName[x]));
+
+		printf("file_name reference on line %d = %p\n", __LINE__, wavname);
+
+		if (verbose) printf("Loop: %ld offset: %ld length: %d, %ld wavname: %s\n", x, (SSBankOffset+x), SSLength, NumSamples, wavname);
+
+		if (!(wavfile = fopen(wavname, "wb"))) {
 		    printf("Error opening file: %s\n", strerror(errno));
 		    return(1); // returning non-zero exits the program as failed
 		}
@@ -584,8 +633,6 @@ int main(int argc, char *argv[]) {
 
 		fclose(wavfile);
 	}
-
-	syx2wav(0x0000, argv[1], argv[2]);
 
 	return 0;
 }
