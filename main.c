@@ -11,13 +11,14 @@ typedef unsigned long dword;
 
 // -----------------------------------------------------------------------------
 
-void strip_ext(char *fname) {
-    char *end = fname + strlen(fname);
+char *strip_ext(char *str) {
+	// pointer to end of string
+    char *end = str + strlen(str);
 
-    while (end > fname && *end != '.' && *end != '\\' && *end != '/') {
+    while (end > str && *end != '.' && *end != '\\' && *end != '/') {
         --end;
     }
-    if ((end > fname && *end == '.') &&
+    if ((end > str && *end == '.') &&
         (*(end - 1) != '\\' && *(end - 1) != '/')) {
         *end = '\0';
     }
@@ -25,14 +26,8 @@ void strip_ext(char *fname) {
 
 // -----------------------------------------------------------------------------
 
-char *trimwhitespace(char *str) {
+char *trim_whitespace(char *str) {
 	char *end;
-
-	// Trim leading space
-	while(isspace((unsigned char)*str)) str++;
-
-	if(*str == 0)  // All spaces?
-	return str;
 
 	// Trim trailing space
 	end = str + strlen(str) - 1;
@@ -47,7 +42,8 @@ char *trimwhitespace(char *str) {
 // -----------------------------------------------------------------------------
 
 int main(int argc, char *argv[]) {
-	char verbose = 1;
+
+	char verbose = 0;
 
 	if (verbose) printf("*** Roland S-10 .syx to .wav conversion ***\n");
 
@@ -57,11 +53,11 @@ int main(int argc, char *argv[]) {
 	}
 
 	FILE *syxfile, *wavfile;
-	//char *prefixless = malloc(strlen(argv[1]));
-	//char *wavname = malloc(sizeof(prefixless)+30);
-	char prefixless[1000];
-	char wavname[1000];
+	char *suffixless = (char *) malloc(strlen(argv[1])+1);
+	char *wavname = (char *) malloc(strlen(argv[1])+50);
 
+	strcpy(suffixless,argv[1]);
+	strip_ext(suffixless);
 
 	if (!(syxfile = fopen(argv[1], "rb"))) {
 	    printf("Error opening file: %s\n", strerror(errno));
@@ -72,10 +68,15 @@ int main(int argc, char *argv[]) {
 	dword fsize = ftell(syxfile);
 	rewind(syxfile);
 
-	byte *syxbuf = malloc(fsize);			// read syxfile into syxbuf
+	byte *syxbuf = (byte *) malloc(fsize);			// read syxfile into syxbuf
 	
 	static dword s10_memory_max = 256*1024;
-	byte *s10_memory = malloc(s10_memory_max);
+	byte *s10_memory = (byte *) malloc(s10_memory_max);
+
+	if ((!syxbuf) || (!s10_memory)) {
+		printf("Memory allocation error.\n");
+		return(1);
+	}
 
 	static byte wave_header[12];
 	static byte wave_chunk_fmt[24];
@@ -136,7 +137,11 @@ int main(int argc, char *argv[]) {
 	};
 
 	// Sampler parameters
-	char ToneName[4][10]; // 9 characters + null
+	char ToneName[4][10] = {
+		"         ",
+		"         ",
+		"         ",
+		"         "}; // 9 characters + null
 	byte
 		SamplingStructure[4] = {0, 0, 0, 0},
 		LoopMode[4] = {0, 0, 0, 0},
@@ -273,11 +278,6 @@ int main(int argc, char *argv[]) {
 							((syxbuf[x] - 0x02) << 14) +
 							(syxbuf[x+1] << 7) +
 							syxbuf[x+2];
-
-						if (SamplePosition > s10_memory_max) {
-							if (verbose > 1) printf("SamplePosition outside S-10 memory boundary.\n");
-							break;
-						}
 					}
 
 					if ((syxbuf[x] >= 0x02) && (syxbuf[x] <= 0x05)) {
@@ -299,9 +299,18 @@ int main(int argc, char *argv[]) {
 
 				// Wave parameter
 
+				//printf("SysexCounter: %ld\n", SysexCounter);
+
 				if (ParameterId == 1) {
 
 					if (SysexCounter == 7+0x49) {	// When a second wave parameter block is in the same sysex chunk
+
+						if (syxbuf[x+1] == 0xf7) {	// if next symbol is system exclusive stop, this is a stray symbol
+							if (verbose) printf("Stray symbol (next is system exclusive stop). Ignoring.\n");
+							SysexActive = 0;
+							continue;
+						}
+
 						WPOffs = 0x49;
 
 						if (verbose > 1) printf("WPOffs is: %d\n", WPOffs);
@@ -310,19 +319,36 @@ int main(int argc, char *argv[]) {
 					if (SysexCounter == 7+WPOffs) {
 						WPBlock = syxbuf[x + 0x0a]; // Destination bank (we set this early / first as we rely on it instead of memory address)
 						if (verbose) printf("Destination bank: %d\n", WPBlock+1);
+						if (WPBlock > 4) {
+							if (verbose) printf("WPBlock error. Ignoring.\n");
+							SysexActive = 0;
+							continue;
+						}
 					}
 
 					if ((SysexCounter >= 7+WPOffs) && (SysexCounter <= 7+WPOffs+0x08)) { // Tone Name
-						ToneName[WPBlock][SysexCounter-7-WPOffs] = syxbuf[x];
 
-						if (ToneName[WPBlock][SysexCounter-7-WPOffs] < 32) {
-							ToneName[WPBlock][SysexCounter-7-WPOffs] = 32;	// replace any character below 'space' with space
+						if ( // Make sure ToneName is filename-safe
+							(isalpha (syxbuf[x])) ||
+							(isdigit (syxbuf[x])) ||
+							(syxbuf[x] == '.') ||
+							(syxbuf[x] == '!') ||
+							(syxbuf[x] == '(') ||
+							(syxbuf[x] == ')') ||
+							(syxbuf[x] == '+') ||
+							(syxbuf[x] == '-') ||
+							(syxbuf[x] == '_')
+						) {
+							ToneName[WPBlock][SysexCounter-7-WPOffs]= syxbuf[x];
+						} else {
+							ToneName[WPBlock][SysexCounter-7-WPOffs]= ' ';
 						}
 
 						if (SysexCounter == 7+WPOffs+8) {
-							ToneName[WPBlock][9] = 0x00; // null
+							// ToneName[WPBlock][9] = '\0'; // null
+							trim_whitespace(ToneName[WPBlock]);
 
-							if (verbose) printf("Tone Name: '%s'\n", trimwhitespace(ToneName[WPBlock]));
+							if (verbose) printf("Tone Name: '%s'\n", ToneName[WPBlock]);
 						}
 					}
 
@@ -447,16 +473,16 @@ int main(int argc, char *argv[]) {
 
 				if (ParameterId == 3) {
 					if (LoHiToggle %2 != 0) { // odd
+						if (SamplePosition+1 > s10_memory_max) { // make sure we never write outside s10_memory;
+							if (verbose ) printf("SamplePosition outside S-10 memory boundary.\n");
+							break;
+						}
 
 						Sample16bit = ((syxbuf[x-1] & 0x7f) << 9) + ((syxbuf[x] & 0x7c) << 2);
 						s10_memory[SamplePosition] = 0xff & Sample16bit;
 						s10_memory[SamplePosition+1] = 0xff & (Sample16bit >> 8);	// Significant Bits Per Sample (16)
 
 						SamplePosition+=2;
-						if (SamplePosition > s10_memory_max) {
-							if (verbose > 1) printf("SamplePosition outside S-10 memory boundary.\n");
-							break;
-						}
 					}
 					LoHiToggle++;
 				}
@@ -604,33 +630,24 @@ int main(int argc, char *argv[]) {
 		}
 
 		wave_chunk_smpl[60] = 0;		// Fraction
-
 		wave_chunk_smpl[64] = 0;		// Play Count
 
-		// 68 bytes in total
-
-		strcpy(prefixless,argv[1]);
-		strip_ext(prefixless);
-
-
-		sprintf(wavname, "%s %s (%s) %s.wav", prefixless, SamplingStructureLUT[SamplingStructure[x]], SamplingStructureLUT[x], trimwhitespace(ToneName[x]));
-
-		printf("file_name reference on line %d = %p\n", __LINE__, wavname);
+		strcpy(wavname,suffixless);
+		sprintf(wavname, "%s - %s (%s) %s.wav", suffixless, SamplingStructureLUT[SamplingStructure[x]], SamplingStructureLUT[x], ToneName[x]);
 
 		if (verbose) printf("Loop: %ld offset: %ld length: %d, %ld wavname: %s\n", x, (SSBankOffset+x), SSLength, NumSamples, wavname);
 
 		if (!(wavfile = fopen(wavname, "wb"))) {
 		    printf("Error opening file: %s\n", strerror(errno));
-		    return(1); // returning non-zero exits the program as failed
+		    return(1);
 		}
 
 		fwrite(wave_header, 1, sizeof(wave_header), wavfile);
 		fwrite(wave_chunk_fmt, 1, sizeof(wave_chunk_fmt), wavfile);
-		fwrite(wave_chunk_data, 1, 8, wavfile);
+		fwrite(wave_chunk_data, 1, sizeof(wave_chunk_data), wavfile);
 
 		fwrite(s10_memory+(StartAddress[x] << 1), 1, (NumSamples << 1), wavfile);
 		fwrite(wave_chunk_smpl, 1, sizeof(wave_chunk_smpl), wavfile);
-
 		fclose(wavfile);
 	}
 
