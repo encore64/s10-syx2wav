@@ -1,6 +1,6 @@
 # Roland S-10 .syx to .wav conversion
 
-Takes a sysex-file intended for Roland S-10, analyzes the sysex data and writes one or more wav-files.
+Takes a sysex-file intended for the Roland S-10 (12 bit) sampler, analyzes the sysex data and writes one or more wav-files.
 
 `$ s10-syx2wav input.syx`
 
