@@ -505,7 +505,11 @@ int main(int argc, char *argv[]) {
 
 		// description of WAV-format: http://soundfile.sapp.org/doc/WaveFormat/
 
-		total_chunk_size = sizeof(wave_header) + sizeof(wave_chunk_fmt) + (NumSamples * NumChannels * BitsPerSample / 8) + sizeof(wave_chunk_smpl);
+		total_chunk_size = sizeof(wave_header) + sizeof(wave_chunk_fmt) + (NumSamples * NumChannels * BitsPerSample / 8);
+
+		if (LoopMode[x] > 0) {
+			total_chunk_size += sizeof(wave_chunk_smpl);
+		}
 
 		// header
 
@@ -569,68 +573,71 @@ int main(int argc, char *argv[]) {
 		wave_chunk_data[6] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 16);
 		wave_chunk_data[7] = 255 & ((NumSamples * NumChannels * BitsPerSample / 8) >> 24);
 
-		// smpl (https://sites.google.com/site/musicgapi/technical-documents/wav-file-format#smpl)
+		if (LoopMode[x] > 0) {
 
-		wave_chunk_smpl[0] = 0x73;	// "smpl"
-		wave_chunk_smpl[1] = 0x6d;
-		wave_chunk_smpl[2] = 0x70;
-		wave_chunk_smpl[3] = 0x6c;
+			// smpl (https://sites.google.com/site/musicgapi/technical-documents/wav-file-format#smpl)
 
-		wave_chunk_smpl[4] = 255 & ((sizeof(wave_chunk_smpl) - 8));				// Chunk Data Size
-		wave_chunk_smpl[5] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 8);
-		wave_chunk_smpl[6] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 16);
-		wave_chunk_smpl[7] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 24);
+			wave_chunk_smpl[0] = 0x73;	// "smpl"
+			wave_chunk_smpl[1] = 0x6d;
+			wave_chunk_smpl[2] = 0x70;
+			wave_chunk_smpl[3] = 0x6c;
 
-		wave_chunk_smpl[8] = 0;	// Manufacturer ID
+			wave_chunk_smpl[4] = 255 & ((sizeof(wave_chunk_smpl) - 8));				// Chunk Data Size
+			wave_chunk_smpl[5] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 8);
+			wave_chunk_smpl[6] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 16);
+			wave_chunk_smpl[7] = 255 & ((sizeof(wave_chunk_smpl) - 8) >> 24);
 
-		wave_chunk_smpl[12] = 0;	// Product ID
+			wave_chunk_smpl[8] = 0;	// Manufacturer ID
 
-		wave_chunk_smpl[16] = 0;	// Sample period
+			wave_chunk_smpl[12] = 0;	// Product ID
 
-		wave_chunk_smpl[20] = 60; 	// MIDI Unity Note
+			wave_chunk_smpl[16] = 0;	// Sample period
 
-		wave_chunk_smpl[24] = 0; 	// MIDI Pitch Fraction
+			wave_chunk_smpl[20] = 60; 	// MIDI Unity Note
 
-		wave_chunk_smpl[28] = 0;	// SMPTE Format
+			wave_chunk_smpl[24] = 0; 	// MIDI Pitch Fraction
 
-		wave_chunk_smpl[32] = 0;	// SMPTE Offset
+			wave_chunk_smpl[28] = 0;	// SMPTE Format
 
-		wave_chunk_smpl[36] = 1;	// Sample Loops
+			wave_chunk_smpl[32] = 0;	// SMPTE Offset
 
-		wave_chunk_smpl[40] = 0;	// Sampler Data size
+			wave_chunk_smpl[36] = 1;	// Sample Loops
 
-		// sample loop 0
+			wave_chunk_smpl[40] = 0;	// Sampler Data size
 
-		wave_chunk_smpl[44] = 0;	// Cue Point ID
+			// sample loop 0
 
-		wave_chunk_smpl[48] = ScanMode[x];	// Type - loop forward
+			wave_chunk_smpl[44] = 0;	// Cue Point ID
 
-		if (LoopMode[x] == 1) {
-			wave_chunk_smpl[52] = 255 & ((ManualEndAddress[x] - ManualLoopLength[x]));				// Loop Start
-			wave_chunk_smpl[53] = 255 & ((ManualEndAddress[x] - ManualLoopLength[x]) >> 8);
-			wave_chunk_smpl[54] = 255 & ((ManualEndAddress[x] - ManualLoopLength[x]) >> 16);
-			wave_chunk_smpl[55] = 255 & ((ManualEndAddress[x] - ManualLoopLength[x]) >> 24);
+			wave_chunk_smpl[48] = ScanMode[x];	// Type - loop forward
 
-			wave_chunk_smpl[56] = 255 & (ManualEndAddress[x]);					// Loop End
-			wave_chunk_smpl[57] = 255 & (ManualEndAddress[x] >> 8);
-			wave_chunk_smpl[58] = 255 & (ManualEndAddress[x] >> 16);
-			wave_chunk_smpl[59] = 255 & (ManualEndAddress[x] >> 24);
+			if (LoopMode[x] == 1) {
+				wave_chunk_smpl[52] = 255 & ((ManualEndAddress[x] - ManualLoopLength[x]));				// Loop Start
+				wave_chunk_smpl[53] = 255 & ((ManualEndAddress[x] - ManualLoopLength[x]) >> 8);
+				wave_chunk_smpl[54] = 255 & ((ManualEndAddress[x] - ManualLoopLength[x]) >> 16);
+				wave_chunk_smpl[55] = 255 & ((ManualEndAddress[x] - ManualLoopLength[x]) >> 24);
+
+				wave_chunk_smpl[56] = 255 & (ManualEndAddress[x]);					// Loop End
+				wave_chunk_smpl[57] = 255 & (ManualEndAddress[x] >> 8);
+				wave_chunk_smpl[58] = 255 & (ManualEndAddress[x] >> 16);
+				wave_chunk_smpl[59] = 255 & (ManualEndAddress[x] >> 24);
+			}
+
+			else if (LoopMode[x] == 2) {
+				wave_chunk_smpl[52] = 255 & ((AutoEndAddress[x] - AutoLoopLength[x]));				// Loop Start
+				wave_chunk_smpl[53] = 255 & ((AutoEndAddress[x] - AutoLoopLength[x]) >> 8);
+				wave_chunk_smpl[54] = 255 & ((AutoEndAddress[x] - AutoLoopLength[x]) >> 16);
+				wave_chunk_smpl[55] = 255 & ((AutoEndAddress[x] - AutoLoopLength[x]) >> 24);
+
+				wave_chunk_smpl[56] = 255 & (AutoEndAddress[x]);					// Loop End
+				wave_chunk_smpl[57] = 255 & (AutoEndAddress[x] >> 8);
+				wave_chunk_smpl[58] = 255 & (AutoEndAddress[x] >> 16);
+				wave_chunk_smpl[59] = 255 & (AutoEndAddress[x] >> 24);
+			}
+
+			wave_chunk_smpl[60] = 0;		// Fraction
+			wave_chunk_smpl[64] = 0;		// Play Count
 		}
-
-		else if (LoopMode[x] == 2) {
-			wave_chunk_smpl[52] = 255 & ((AutoEndAddress[x] - AutoLoopLength[x]));				// Loop Start
-			wave_chunk_smpl[53] = 255 & ((AutoEndAddress[x] - AutoLoopLength[x]) >> 8);
-			wave_chunk_smpl[54] = 255 & ((AutoEndAddress[x] - AutoLoopLength[x]) >> 16);
-			wave_chunk_smpl[55] = 255 & ((AutoEndAddress[x] - AutoLoopLength[x]) >> 24);
-
-			wave_chunk_smpl[56] = 255 & (AutoEndAddress[x]);					// Loop End
-			wave_chunk_smpl[57] = 255 & (AutoEndAddress[x] >> 8);
-			wave_chunk_smpl[58] = 255 & (AutoEndAddress[x] >> 16);
-			wave_chunk_smpl[59] = 255 & (AutoEndAddress[x] >> 24);
-		}
-
-		wave_chunk_smpl[60] = 0;		// Fraction
-		wave_chunk_smpl[64] = 0;		// Play Count
 
 		strcpy(wavname,suffixless);
 		sprintf(wavname, "%s - %s (%s) %s.wav", suffixless, SamplingStructureLUT[SamplingStructure[x]], SamplingStructureLUT[x], ToneName[x]);
@@ -645,9 +652,12 @@ int main(int argc, char *argv[]) {
 		fwrite(wave_header, 1, sizeof(wave_header), wavfile);
 		fwrite(wave_chunk_fmt, 1, sizeof(wave_chunk_fmt), wavfile);
 		fwrite(wave_chunk_data, 1, sizeof(wave_chunk_data), wavfile);
-
 		fwrite(s10_memory+(StartAddress[x] << 1), 1, (NumSamples << 1), wavfile);
-		fwrite(wave_chunk_smpl, 1, sizeof(wave_chunk_smpl), wavfile);
+
+		if (LoopMode[x] > 0) {
+			fwrite(wave_chunk_smpl, 1, sizeof(wave_chunk_smpl), wavfile);
+		}
+
 		fclose(wavfile);
 	}
 
