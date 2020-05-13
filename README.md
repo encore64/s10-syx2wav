@@ -8,4 +8,23 @@ The wav-filename will be based on 1) the input file, 2) the sampling structure u
 
 The resulting wav-file(s) will be either 15 or 30 kHz 16 bit mono and includes the loop information.
 
-It only converts one sysex-file at the time. The `compile_and_run.sh` bash-script demonstrates how to convert a directory (plus all its subdirectories) in Linux.
+## Batch converting
+
+The program only converts one sysex-file at the time. In Linux or Windows you can create the following file and put it together with the compiled executable in order to convert a directory of .syx-files (plus all its subdirectories) to .wav.
+
+### Linux
+
+**batch-convert.sh**
+```bash
+#!/bin/bash
+find "./" -type f -name "*.syx" | while read fname; do
+  ./s10-syx2wav "$fname"
+done
+```
+
+### Windows
+
+**batch-convert.bat**
+```bat
+for /r %%i in (*.syx) do s10-syx2wav.exe "%%i"
+```
