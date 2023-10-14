@@ -575,7 +575,7 @@ int main(int argc, char *argv[]) {
 
 		if (LoopMode[x] > 0) {
 
-			// smpl (https://sites.google.com/site/musicgapi/technical-documents/wav-file-format#smpl)
+			// smpl - http://web.archive.org/web/20200605134327/https://sites.google.com/site/musicgapi/technical-documents/wav-file-format#smpl
 
 			wave_chunk_smpl[0] = 0x73;	// "smpl"
 			wave_chunk_smpl[1] = 0x6d;
