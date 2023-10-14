@@ -6,7 +6,7 @@ rm -f ./build/s10-syx2wav
 # compile program for linux
 gcc main.c -o ./build/s10-syx2wav
 
-# example for compiling for windows (32 and 64 bit compatible)
+# example for compiling for windows (32 and 64 bit compatible) in linux
 # i686-w64-mingw32-gcc main.c -o ./build/s10-syx2wav.exe
 
 # run program with example file
